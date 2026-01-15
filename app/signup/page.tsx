@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signUp } from "@/lib/auth-client";
+import { signIn, signUp } from "@/lib/auth-client";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -54,7 +54,7 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-      await signUp.social({
+      await signIn.social({
         provider: "google",
         callbackURL: "/dashboard",
       });
