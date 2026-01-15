@@ -358,35 +358,46 @@ export default function DashboardPage() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-4">
           <div className="bg-white rounded-lg shadow p-6">
             <p className="text-sm text-gray-500">Total money owed</p>
             <h2 className="text-2xl font-semibold text-gray-800 mt-2">
               {formatMoney(totalOwed)}
             </h2>
           </div>
-          <div className="bg-white rounded-lg shadow p-6 md:col-span-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Reminders available</p>
-                <h2 className="text-2xl font-semibold text-gray-800 mt-2">
-                  {reminderCount} reminder{reminderCount === 1 ? "" : "s"}
-                </h2>
-                <p className="mt-2 text-xs text-gray-500">
-                  Mpesa reminders will show here once money is loaded.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsAddDialogOpen(true)}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
-              >
-                Add Credit
-              </button>
-            </div>
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-gray-600">
-                Due today: {dueTodayCount} customer{dueTodayCount === 1 ? "" : "s"}
+          <div className="bg-white rounded-lg shadow p-6">
+            <p className="text-sm text-gray-500">Reminders</p>
+            <h2 className="text-2xl font-semibold text-gray-800 mt-2">
+              {reminderCount}
+            </h2>
+            <p className="mt-2 text-xs text-gray-500">
+              Mpesa reminders will show here once money is loaded.
+            </p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <p className="text-sm text-gray-500">Due today</p>
+            <h2 className="text-2xl font-semibold text-gray-800 mt-2">
+              {dueTodayCount}
+            </h2>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <p className="text-sm text-gray-500">Overdue</p>
+            <h2 className="text-2xl font-semibold text-gray-800 mt-2">
+              {credits.filter((record) => record.status === "OVERDUE").length}
+            </h2>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Reminders available</p>
+              <p className="mt-1 text-sm text-gray-600">
+                {reminders.length > 0
+                  ? "You have reminders waiting to be sent."
+                  : "No reminders due in the next 7 days."}
               </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <button
                 onClick={handleSendAllDueToday}
                 disabled={dueTodayCount === 0}
@@ -394,16 +405,13 @@ export default function DashboardPage() {
               >
                 Send all due today
               </button>
+              <button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+              >
+                Add Credit
+              </button>
             </div>
-            {reminders.length > 0 ? (
-              <p className="mt-4 text-sm text-gray-600">
-                You have reminders waiting to be sent.
-              </p>
-            ) : (
-              <p className="mt-4 text-sm text-gray-500">
-                No reminders due in the next 7 days.
-              </p>
-            )}
           </div>
         </div>
 
