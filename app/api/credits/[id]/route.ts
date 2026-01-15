@@ -7,8 +7,9 @@ type UpdateCreditBody = {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const body = (await request.json()) as UpdateCreditBody;
 
   if (!body.status) {
@@ -16,7 +17,7 @@ export async function PATCH(
   }
 
   const credit = await prisma.credit.update({
-    where: { id: params.id },
+    where: { id },
     data: { status: body.status },
     include: { items: true },
   });
