@@ -41,14 +41,15 @@ export async function POST(request: NextRequest) {
     "Reminder: Your account is due today. Please pay to avoid overdue charges.";
 
   const sendResults = await Promise.allSettled(
-    dueToday.map((credit) =>
-      sendSms({
+    dueToday.map((credit) => {
+      const total = Number(credit.totalAmount);
+      const paid = Number(credit.amountPaid);
+      const amountDue = total - paid;
+      return sendSms({
         to: credit.customerPhone,
-        message: `${messageBase} Amount due: Ksh ${Number(
-          credit.totalAmount - credit.amountPaid
-        ).toFixed(2)}.`,
-      })
-    )
+        message: `${messageBase} Amount due: Ksh ${amountDue.toFixed(2)}.`,
+      });
+    })
   );
 
   const sentCount = sendResults.filter((result) => result.status === "fulfilled")
