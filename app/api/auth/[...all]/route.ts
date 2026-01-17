@@ -6,7 +6,7 @@ const handlers = toNextJsHandler(auth);
 
 export const GET = handlers.GET;
 
-export const POST = async (request: NextRequest, context: unknown) => {
+export const POST = async (request: NextRequest) => {
   if (request.nextUrl?.pathname?.includes("/api/auth/sign-up/email")) {
     try {
       const cloned = request.clone();
@@ -24,5 +24,5 @@ export const POST = async (request: NextRequest, context: unknown) => {
     }
   }
 
-  return handlers.POST(request, context as never);
+  return handlers.POST(request);
 };
