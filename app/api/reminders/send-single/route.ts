@@ -42,11 +42,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const total = Number(credit.totalAmount);
+    const paid = Number(credit.amountPaid);
+    const amountDue = total - paid;
     const responseText = await sendSms({
       to: credit.customerPhone,
-      message: `Reminder: Your account is due. Amount due: Ksh ${Number(
-        credit.totalAmount - credit.amountPaid
-      ).toFixed(2)}.`,
+      message: `Reminder: Your account is due. Amount due: Ksh ${amountDue.toFixed(
+        2
+      )}.`,
     });
 
     console.log("[Remind] send-single success", {
