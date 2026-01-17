@@ -39,7 +39,7 @@ model Account {
   userId                String
   providerId            String    @map("provider")
   accountId             String    // Better Auth uses this field name (was providerAccountId)
-  passwordHash          String?
+  password              String?   @db.Text
   accessToken           String?   @db.Text
   idToken               String?   @db.Text
   accessTokenExpiresAt  DateTime?
@@ -79,6 +79,7 @@ model Credit {
   id           String       @id @default(cuid())
   userId       String
   customerName String
+  customerPhone String     @default("")
   dueDate      DateTime
   totalAmount  Decimal      @db.Decimal(10, 2)
   amountPaid   Decimal      @db.Decimal(10, 2) @default(0)

@@ -1,6 +1,7 @@
 "use client";
 
 import { useSession, signOut } from "@/lib/auth-client";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -22,6 +23,7 @@ type CreditItemDraft = {
 type CreditRecord = {
   id: string;
   customerName: string;
+  customerPhone: string;
   dueDate: string;
   totalAmount: number;
   amountPaid: number;
@@ -82,6 +84,7 @@ export default function DashboardPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [formState, setFormState] = useState({
     customerName: "",
+    customerPhone: "",
     dueDate: "",
     amountPaid: "",
     items: [{ id: crypto.randomUUID(), name: "", quantity: "", unitPrice: "" }],
@@ -235,7 +238,12 @@ export default function DashboardPage() {
       }));
     const amountPaid = Number(formState.amountPaid || 0);
 
-    if (!formState.customerName || !formState.dueDate || items.length === 0) {
+    if (
+      !formState.customerName ||
+      !formState.customerPhone ||
+      !formState.dueDate ||
+      items.length === 0
+    ) {
       return;
     }
 
@@ -247,6 +255,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           userId: session.user.id,
           customerName: formState.customerName.trim(),
+          customerPhone: formState.customerPhone.trim(),
           dueDate: formState.dueDate,
           amountPaid,
           items,
@@ -260,6 +269,7 @@ export default function DashboardPage() {
       setCredits((prev) => [data.credit, ...prev]);
       setFormState({
         customerName: "",
+        customerPhone: "",
         dueDate: "",
         amountPaid: "",
         items: [{ id: crypto.randomUUID(), name: "", quantity: "", unitPrice: "" }],
@@ -293,14 +303,25 @@ export default function DashboardPage() {
     }
   };
 
-  const handleRemind = () => {
-    setReminderCount((prev) => {
-      if (prev === 0) {
-        return 0;
-      }
-      const next = prev - 1;
-      return next;
+  const handleDeleteCredit = async (recordId: string) => {
+    const response = await fetch(`/api/credits/${recordId}`, {
+      method: "DELETE",
     });
+    if (!response.ok) {
+      setToast({
+        message: "Failed to delete credit. Please try again.",
+        variant: "warning",
+      });
+      return;
+    }
+    setCredits((prev) => prev.filter((record) => record.id !== recordId));
+    if (selectedRecord?.id === recordId) {
+      setSelectedRecord(null);
+    }
+    setToast({ message: "Credit deleted.", variant: "success" });
+  };
+
+  const handleRemind = async (creditId: string) => {
     if (reminderCount === 0) {
       setToast({
         message: "Reminders are finished. Please recharge your account.",
@@ -308,10 +329,28 @@ export default function DashboardPage() {
       });
       return;
     }
+    if (!session?.user?.id) {
+      return;
+    }
+    const response = await fetch("/api/reminders/send-single", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: session.user.id, creditId }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.sent) {
+      setToast({
+        message: data?.error || "Failed to send reminder. Please try again.",
+        variant: "warning",
+      });
+      return;
+    }
+    console.log("[Remind] client success", data);
+    setReminderCount((prev) => Math.max(0, prev - 1));
     setToast({ message: "Reminder sent.", variant: "success" });
   };
 
-  const handleSendAllDueToday = () => {
+  const handleSendAllDueToday = async () => {
     if (dueTodayCount === 0) {
       return;
     }
@@ -330,7 +369,23 @@ export default function DashboardPage() {
       });
       return;
     }
-    setReminderCount((prev) => prev - dueTodayCount);
+    if (!session?.user?.id) {
+      return;
+    }
+    const response = await fetch("/api/reminders/send-due-today", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: session.user.id }),
+    });
+    if (!response.ok) {
+      setToast({
+        message: "Failed to send reminders. Please try again.",
+        variant: "warning",
+      });
+      return;
+    }
+    const data = await response.json();
+    setReminderCount((prev) => Math.max(0, prev - (data.sentCount || 0)));
     setToast({ message: "Reminders sent.", variant: "success" });
   };
 
@@ -339,8 +394,9 @@ export default function DashboardPage() {
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-indigo-600">Cred</h1>
+            <div className="flex items-center gap-2">
+              <Image src="/logo.jpg" alt="Cred logo" width={32} height={32} />
+              <h1 className="text-2xl font-bold text-teal-600">Cred</h1>
             </div>
             <div className="flex items-center gap-4">
               <span className="text-gray-700">
@@ -401,13 +457,13 @@ export default function DashboardPage() {
               <button
                 onClick={handleSendAllDueToday}
                 disabled={dueTodayCount === 0}
-                className="inline-flex items-center justify-center rounded-lg border border-indigo-200 px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center justify-center rounded-lg border border-teal-200 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Send all due today
               </button>
               <button
                 onClick={() => setIsAddDialogOpen(true)}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
               >
                 Add Credit
               </button>
@@ -426,7 +482,7 @@ export default function DashboardPage() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Search customers"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
             </div>
           </div>
@@ -464,7 +520,7 @@ export default function DashboardPage() {
                         event.target.value as CreditRecord["status"]
                       )
                     }
-                    className="mt-1 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="mt-1 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   >
                     {Object.entries(statusLabels).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -475,15 +531,21 @@ export default function DashboardPage() {
                 </div>
                 <button
                   onClick={() => setSelectedRecord(record)}
-                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50"
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-50"
                 >
                   View
                 </button>
                 <button
-                  onClick={handleRemind}
+                  onClick={() => handleRemind(record.id)}
                   className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
                 >
                   Remind
+                </button>
+                <button
+                  onClick={() => handleDeleteCredit(record.id)}
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                >
+                  Delete
                 </button>
               </div>
             ))}
@@ -537,7 +599,20 @@ export default function DashboardPage() {
                   type="text"
                   value={formState.customerName}
                   onChange={handleInputChange("customerName")}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Customer phone
+                </label>
+                <input
+                  type="tel"
+                  value={formState.customerPhone}
+                  onChange={handleInputChange("customerPhone")}
+                  placeholder="+254..."
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   required
                 />
               </div>
@@ -558,7 +633,7 @@ export default function DashboardPage() {
                           handleItemChange(index, "name", event.target.value)
                         }
                         placeholder="Item name"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                         required
                       />
                       <input
@@ -570,7 +645,7 @@ export default function DashboardPage() {
                           handleItemChange(index, "quantity", event.target.value)
                         }
                         placeholder="Qty"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                         required
                       />
                       <input
@@ -582,7 +657,7 @@ export default function DashboardPage() {
                           handleItemChange(index, "unitPrice", event.target.value)
                         }
                         placeholder="Unit price"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                         required
                       />
                       <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700 md:justify-end">
@@ -602,7 +677,7 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={handleAddItem}
-                    className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                    className="text-sm font-medium text-teal-700 hover:text-teal-500"
                   >
                     + Add another item
                   </button>
@@ -618,7 +693,7 @@ export default function DashboardPage() {
                   step="0.01"
                   value={formState.amountPaid}
                   onChange={handleInputChange("amountPaid")}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </div>
               <div>
@@ -629,7 +704,7 @@ export default function DashboardPage() {
                   type="date"
                   value={formState.dueDate}
                   onChange={handleInputChange("dueDate")}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   required
                 />
               </div>
@@ -644,7 +719,7 @@ export default function DashboardPage() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                  className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
                 >
                   {isSubmitting ? "Saving..." : "Save Credit"}
                 </button>
@@ -686,6 +761,10 @@ export default function DashboardPage() {
                 <span className="font-medium">
                   {formatMoney(selectedRecord.amountPaid)}
                 </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Phone</span>
+                <span className="font-medium">{selectedRecord.customerPhone}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Due date</span>
@@ -731,8 +810,14 @@ export default function DashboardPage() {
             </div>
             <div className="mt-6 flex justify-end">
               <button
+                onClick={() => handleDeleteCredit(selectedRecord.id)}
+                className="mr-3 px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+              >
+                Delete
+              </button>
+              <button
                 onClick={() => setSelectedRecord(null)}
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
               >
                 Close
               </button>

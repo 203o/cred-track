@@ -10,6 +10,7 @@ type CreditItemInput = {
 type CreateCreditBody = {
   userId: string;
   customerName: string;
+  customerPhone: string;
   dueDate: string;
   amountPaid?: number;
   items: CreditItemInput[];
@@ -80,7 +81,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as CreateCreditBody;
 
-  if (!body.userId || !body.customerName || !body.dueDate) {
+  if (
+    !body.userId ||
+    !body.customerName ||
+    !body.customerPhone ||
+    !body.dueDate
+  ) {
     return NextResponse.json(
       { error: "Missing required fields" },
       { status: 400 }
@@ -105,6 +111,7 @@ export async function POST(request: NextRequest) {
     data: {
       userId: body.userId,
       customerName: body.customerName.trim(),
+      customerPhone: body.customerPhone.trim(),
       dueDate: new Date(body.dueDate),
       totalAmount,
       amountPaid,
