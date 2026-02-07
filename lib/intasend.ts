@@ -42,8 +42,15 @@ export async function createStkPush({
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    const errorDetail =
+      data?.detail || data?.error || data?.message || "Unknown error";
+    console.error("[IntaSend] STK push error", {
+      status: response.status,
+      error: errorDetail,
+      data,
+    });
     throw new Error(
-      data?.detail || data?.error || "Failed to create IntaSend STK push"
+      `${errorDetail} (status ${response.status})`
     );
   }
 
