@@ -61,6 +61,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ topupId: topup.id, invoiceId });
   } catch (error) {
+    console.error("[Topup] STK push failed", {
+      userId: body.userId,
+      phone: body.phone,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+
     await prisma.creditTopup.update({
       where: { id: topup.id },
       data: { status: "FAILED" },
