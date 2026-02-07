@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
   const balance = await prisma.creditBalance.upsert({
     where: { userId },
     update: {},
-    create: { userId, balance: 10 },
+    create: { userId, balance: 0 },
   });
 
   const credits = await prisma.credit.findMany({

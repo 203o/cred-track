@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       prisma.creditBalance.upsert({
         where: { userId: topup.userId },
         update: { balance: { increment: topup.creditsAdded } },
-        create: { userId: topup.userId, balance: 10 + topup.creditsAdded },
+        create: { userId: topup.userId, balance: topup.creditsAdded },
       }),
     ]);
   } else if (nextStatus === "FAILED") {

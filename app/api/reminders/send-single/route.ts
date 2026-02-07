@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   const balance = await prisma.creditBalance.upsert({
     where: { userId: body.userId },
     update: {},
-    create: { userId: body.userId, balance: 10 },
+    create: { userId: body.userId, balance: 0 },
   });
 
   if (balance.balance < 1) {

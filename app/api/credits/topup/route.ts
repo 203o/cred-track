@@ -5,20 +5,31 @@ import { createStkPush } from "@/lib/intasend";
 type TopupBody = {
   userId: string;
   phone: string;
+  amount: number;
 };
 
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as TopupBody;
 
-  if (!body.userId || !body.phone) {
+  if (!body.userId || !body.phone || !body.amount) {
     return NextResponse.json(
-      { error: "Missing userId or phone" },
+      { error: "Missing userId, phone, or amount" },
       { status: 400 }
     );
   }
 
-  const amount = 10;
-  const creditsAdded = 3;
+  const amount = Number(body.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+  }
+  if (amount % 10 !== 0) {
+    return NextResponse.json(
+      { error: "Amount must be in multiples of 10" },
+      { status: 400 }
+    );
+  }
+
+  const creditsAdded = (amount / 10) * 3;
   const apiRef = `topup_${body.userId}_${Date.now()}`;
 
   const user = await prisma.user.findUnique({

@@ -99,7 +99,7 @@ model Credit {
 model CreditBalance {
   id        String   @id @default(cuid())
   userId    String   @unique
-  balance   Int      @default(10)
+  balance   Int      @default(0)
   updatedAt DateTime @updatedAt
 }
 

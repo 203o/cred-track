@@ -84,6 +84,7 @@ export default function DashboardPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isTopupOpen, setIsTopupOpen] = useState(false);
   const [topupPhone, setTopupPhone] = useState("");
+  const [topupAmount, setTopupAmount] = useState("10");
   const [isTopupSubmitting, setIsTopupSubmitting] = useState(false);
   const [formState, setFormState] = useState({
     customerName: "",
@@ -409,6 +410,14 @@ export default function DashboardPage() {
       });
       return;
     }
+    const amount = Number(topupAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount % 10 !== 0) {
+      setToast({
+        message: "Amount must be a multiple of 10.",
+        variant: "warning",
+      });
+      return;
+    }
 
     setIsTopupSubmitting(true);
     try {
@@ -418,6 +427,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           userId: session.user.id,
           phone: topupPhone.trim(),
+          amount,
         }),
       });
 
@@ -436,6 +446,7 @@ export default function DashboardPage() {
       });
       setIsTopupOpen(false);
       setTopupPhone("");
+      setTopupAmount("10");
     } finally {
       setIsTopupSubmitting(false);
     }
@@ -815,8 +826,22 @@ export default function DashboardPage() {
                   required
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Amount (KES)
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  step="10"
+                  value={topupAmount}
+                  onChange={(event) => setTopupAmount(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  required
+                />
+              </div>
               <div className="rounded-lg border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-                Pay Ksh 10 to receive 3 reminder credits.
+                Each Ksh 10 adds 3 reminder credits.
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button
