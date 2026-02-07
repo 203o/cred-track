@@ -52,6 +52,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   }
 
+  const balance = await prisma.creditBalance.upsert({
+    where: { userId },
+    update: {},
+    create: { userId, balance: 10 },
+  });
+
   const credits = await prisma.credit.findMany({
     where: { userId },
     include: { items: true },
@@ -75,7 +81,7 @@ export async function GET(request: NextRequest) {
     await Promise.all(updates);
   }
 
-  return NextResponse.json({ credits });
+  return NextResponse.json({ credits, balance: balance.balance });
 }
 
 export async function POST(request: NextRequest) {

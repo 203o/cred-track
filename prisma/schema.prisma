@@ -21,6 +21,12 @@ enum CreditStatus {
   PAID
 }
 
+enum TopupStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
 model User {
   id            String   @id @default(cuid())
   email         String   @unique
@@ -88,6 +94,26 @@ model Credit {
   updatedAt    DateTime     @updatedAt
 
   items CreditItem[]
+}
+
+model CreditBalance {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(10)
+  updatedAt DateTime @updatedAt
+}
+
+model CreditTopup {
+  id            String      @id @default(cuid())
+  userId        String
+  phone         String
+  amount        Decimal     @db.Decimal(10, 2)
+  creditsAdded  Int
+  status        TopupStatus @default(PENDING)
+  apiRef        String      @unique
+  invoiceId     String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
 
 model CreditItem {

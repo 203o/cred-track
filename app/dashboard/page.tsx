@@ -74,7 +74,7 @@ export default function DashboardPage() {
     null
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [reminderCount, setReminderCount] = useState(10);
+  const [reminderBalance, setReminderBalance] = useState(0);
   const [toast, setToast] = useState<{
     message: string;
     variant: "success" | "warning";
@@ -82,6 +82,9 @@ export default function DashboardPage() {
   const [credits, setCredits] = useState<CreditRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [isTopupOpen, setIsTopupOpen] = useState(false);
+  const [topupPhone, setTopupPhone] = useState("");
+  const [isTopupSubmitting, setIsTopupSubmitting] = useState(false);
   const [formState, setFormState] = useState({
     customerName: "",
     customerPhone: "",
@@ -108,6 +111,7 @@ export default function DashboardPage() {
       }
       const data = await response.json();
       setCredits(data.credits || []);
+      setReminderBalance(Number(data.balance || 0));
     };
 
     fetchCredits();
@@ -322,7 +326,7 @@ export default function DashboardPage() {
   };
 
   const handleRemind = async (creditId: string) => {
-    if (reminderCount === 0) {
+    if (reminderBalance === 0) {
       setToast({
         message: "Reminders are finished. Please recharge your account.",
         variant: "warning",
@@ -346,7 +350,7 @@ export default function DashboardPage() {
       return;
     }
     console.log("[Remind] client success", data);
-    setReminderCount((prev) => Math.max(0, prev - 1));
+    setReminderBalance(Number(data.balance ?? reminderBalance));
     setToast({ message: "Reminder sent.", variant: "success" });
   };
 
@@ -354,14 +358,14 @@ export default function DashboardPage() {
     if (dueTodayCount === 0) {
       return;
     }
-    if (reminderCount === 0) {
+    if (reminderBalance === 0) {
       setToast({
         message: "Reminders are finished. Please recharge your account.",
         variant: "warning",
       });
       return;
     }
-    if (reminderCount < dueTodayCount) {
+    if (reminderBalance < dueTodayCount) {
       setToast({
         message:
           "Not enough reminders to send all due today. Please recharge your account.",
@@ -377,16 +381,64 @@ export default function DashboardPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: session.user.id }),
     });
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       setToast({
-        message: "Failed to send reminders. Please try again.",
+        message: data?.error || "Failed to send reminders. Please try again.",
         variant: "warning",
       });
       return;
     }
-    const data = await response.json();
-    setReminderCount((prev) => Math.max(0, prev - (data.sentCount || 0)));
+    if (!data?.sentCount && data?.error) {
+      setToast({ message: data.error, variant: "warning" });
+      return;
+    }
+    setReminderBalance(Number(data.balance ?? reminderBalance));
     setToast({ message: "Reminders sent.", variant: "success" });
+  };
+
+  const handleTopup = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!session?.user?.id) {
+      return;
+    }
+    if (!topupPhone.startsWith("+")) {
+      setToast({
+        message: "Enter a phone number in +254... format.",
+        variant: "warning",
+      });
+      return;
+    }
+
+    setIsTopupSubmitting(true);
+    try {
+      const response = await fetch("/api/credits/topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: session.user.id,
+          phone: topupPhone.trim(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setToast({
+          message: data?.error || "Failed to start STK push.",
+          variant: "warning",
+        });
+        return;
+      }
+      setToast({
+        message: "STK Push sent. Confirm on your phone.",
+        variant: "success",
+      });
+      setIsTopupOpen(false);
+      setTopupPhone("");
+    } finally {
+      setIsTopupSubmitting(false);
+    }
   };
 
   return (
@@ -424,7 +476,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-lg shadow p-6">
             <p className="text-sm text-gray-500">Reminders</p>
             <h2 className="text-2xl font-semibold text-gray-800 mt-2">
-              {reminderCount}
+              {reminderBalance}
             </h2>
             <p className="mt-2 text-xs text-gray-500">
               Mpesa reminders will show here once money is loaded.
@@ -460,6 +512,12 @@ export default function DashboardPage() {
                 className="inline-flex items-center justify-center rounded-lg border border-teal-200 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Send all due today
+              </button>
+              <button
+                onClick={() => setIsTopupOpen(true)}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-50"
+              >
+                Load Credits
               </button>
               <button
                 onClick={() => setIsAddDialogOpen(true)}
@@ -722,6 +780,58 @@ export default function DashboardPage() {
                   className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
                 >
                   {isSubmitting ? "Saving..." : "Save Credit"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isTopupOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800">
+                Load Credits
+              </h3>
+              <button
+                onClick={() => setIsTopupOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <form className="mt-4 space-y-4" onSubmit={handleTopup}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Phone number
+                </label>
+                <input
+                  type="tel"
+                  value={topupPhone}
+                  onChange={(event) => setTopupPhone(event.target.value)}
+                  placeholder="+254..."
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  required
+                />
+              </div>
+              <div className="rounded-lg border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+                Pay Ksh 10 to receive 3 reminder credits.
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTopupOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isTopupSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
+                >
+                  {isTopupSubmitting ? "Sending..." : "Send STK Push"}
                 </button>
               </div>
             </form>

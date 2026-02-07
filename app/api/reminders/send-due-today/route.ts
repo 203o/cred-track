@@ -37,6 +37,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sentCount: 0 });
   }
 
+  const balance = await prisma.creditBalance.upsert({
+    where: { userId: body.userId },
+    update: {},
+    create: { userId: body.userId, balance: 10 },
+  });
+
+  if (balance.balance < dueToday.length) {
+    return NextResponse.json(
+      { error: "Not enough credits to send all due today" },
+      { status: 400 }
+    );
+  }
+
   const messageBase =
     "Reminder: Your account is due today. Please pay to avoid overdue charges.";
 
@@ -55,5 +68,17 @@ export async function POST(request: NextRequest) {
   const sentCount = sendResults.filter((result) => result.status === "fulfilled")
     .length;
 
-  return NextResponse.json({ sentCount });
+  if (sentCount !== dueToday.length) {
+    return NextResponse.json(
+      { error: "Failed to send all reminders" },
+      { status: 502 }
+    );
+  }
+
+  const updatedBalance = await prisma.creditBalance.update({
+    where: { userId: body.userId },
+    data: { balance: { decrement: sentCount } },
+  });
+
+  return NextResponse.json({ sentCount, balance: updatedBalance.balance });
 }

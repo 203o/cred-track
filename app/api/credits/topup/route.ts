@@ -1,0 +1,74 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { createStkPush } from "@/lib/intasend";
+
+type TopupBody = {
+  userId: string;
+  phone: string;
+};
+
+export async function POST(request: NextRequest) {
+  const body = (await request.json()) as TopupBody;
+
+  if (!body.userId || !body.phone) {
+    return NextResponse.json(
+      { error: "Missing userId or phone" },
+      { status: 400 }
+    );
+  }
+
+  const amount = 10;
+  const creditsAdded = 3;
+  const apiRef = `topup_${body.userId}_${Date.now()}`;
+
+  const user = await prisma.user.findUnique({
+    where: { id: body.userId },
+  });
+
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const topup = await prisma.creditTopup.create({
+    data: {
+      userId: body.userId,
+      phone: body.phone,
+      amount,
+      creditsAdded,
+      apiRef,
+    },
+  });
+
+  try {
+    const response = await createStkPush({
+      phoneNumber: body.phone,
+      email: user.email,
+      amount,
+      apiRef,
+      narrative: "Cred Track reminder credits",
+    });
+
+    const invoiceId =
+      response?.invoice?.invoice_id ||
+      response?.invoice_id ||
+      response?.id ||
+      null;
+
+    await prisma.creditTopup.update({
+      where: { id: topup.id },
+      data: { invoiceId },
+    });
+
+    return NextResponse.json({ topupId: topup.id, invoiceId });
+  } catch (error) {
+    await prisma.creditTopup.update({
+      where: { id: topup.id },
+      data: { status: "FAILED" },
+    });
+
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "STK push failed" },
+      { status: 502 }
+    );
+  }
+}
