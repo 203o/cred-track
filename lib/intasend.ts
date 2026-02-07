@@ -1,10 +1,10 @@
 const INTASEND_BASE_URL =
   process.env.INTASEND_BASE_URL || "https://api.intasend.com";
 
-const publicKey = process.env.INTASEND_PUBLIC_KEY || "";
+const secretKey = process.env.INTASEND_SECRET_KEY || "";
 
-if (!publicKey) {
-  throw new Error("Missing IntaSend public key");
+if (!secretKey) {
+  throw new Error("Missing IntaSend secret key");
 }
 
 export async function createStkPush({
@@ -25,7 +25,7 @@ export async function createStkPush({
     {
       method: "POST",
       headers: {
-        "X-IntaSend-Public-API-Key": publicKey,
+        Authorization: `Bearer ${secretKey}`,
         "Content-Type": "application/json",
         Accept: "application/json",
       },
@@ -43,7 +43,11 @@ export async function createStkPush({
 
   if (!response.ok) {
     const errorDetail =
-      data?.detail || data?.error || data?.message || "Unknown error";
+      data?.detail ||
+      data?.error ||
+      data?.message ||
+      (Array.isArray(data?.errors) ? JSON.stringify(data.errors) : undefined) ||
+      "Unknown error";
     console.error("[IntaSend] STK push error", {
       status: response.status,
       error: errorDetail,
