@@ -40,8 +40,9 @@ export async function POST(request: NextRequest) {
   });
 
   try {
+    const normalizedPhone = body.phone.replace(/^\+/, "").trim();
     const response = await createStkPush({
-      phoneNumber: body.phone,
+      phoneNumber: normalizedPhone,
       email: user.email,
       amount,
       apiRef,
