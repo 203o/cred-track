@@ -1,7 +1,7 @@
 const INTASEND_BASE_URL =
   process.env.INTASEND_BASE_URL || "https://api.intasend.com";
 
-const publicKey = process.env.INTASEND_PUBLIC_KEY;
+const publicKey = process.env.INTASEND_PUBLIC_KEY || "";
 
 if (!publicKey) {
   throw new Error("Missing IntaSend public key");
