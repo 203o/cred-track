@@ -8,19 +8,34 @@ import { signIn } from "@/lib/auth-client";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleEmailSignIn = async (e: React.FormEvent) => {
+  const normalizePhone = (value: string) => value.replace(/\s+/g, "");
+
+  const toAuthEmail = (value: string) => {
+    const normalized = normalizePhone(value);
+    const digits = normalized.replace(/\D/g, "");
+    return `phone-${digits}@cred.local`;
+  };
+
+  const handlePhoneSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
+    const normalized = normalizePhone(phone);
+    if (!normalized.startsWith("+") || normalized.length < 10) {
+      setError("Enter a valid phone number starting with +.");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const result = await signIn.email({
-        email,
+        email: toAuthEmail(normalized),
         password,
       });
 
@@ -73,23 +88,23 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Email/Password Form */}
-        <form onSubmit={handleEmailSignIn} className="mt-8 space-y-6">
+        {/* Phone/Password Form */}
+        <form onSubmit={handlePhoneSignIn} className="mt-8 space-y-6">
           <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email address
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                Phone number
               </label>
               <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
+                id="phone"
+                name="phone"
+                type="tel"
+                autoComplete="tel"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 className="appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
-                placeholder="Enter your email"
+                placeholder="+254..."
               />
             </div>
             <div>
