@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       email: user.email,
       amount,
       apiRef,
-      narrative: "Cred Track reminder credits",
+      narrative: "Holwa reminder credits",
     });
 
     const invoiceId =

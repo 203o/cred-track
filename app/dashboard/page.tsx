@@ -142,6 +142,10 @@ export default function DashboardPage() {
       return new Date(record.dueDate).toDateString() === todayString;
     }).length;
   }, [credits]);
+  const overdueCount = useMemo(
+    () => credits.filter((record) => record.status === "OVERDUE").length,
+    [credits]
+  );
   const filteredCredits = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) {
@@ -398,6 +402,49 @@ export default function DashboardPage() {
     setToast({ message: "Reminders sent.", variant: "success" });
   };
 
+  const handleSendOverdue = async () => {
+    if (overdueCount === 0) {
+      return;
+    }
+    if (reminderBalance === 0) {
+      setToast({
+        message: "Reminders are finished. Please recharge your account.",
+        variant: "warning",
+      });
+      return;
+    }
+    if (reminderBalance < overdueCount) {
+      setToast({
+        message:
+          "Not enough reminders to send all overdue. Please recharge your account.",
+        variant: "warning",
+      });
+      return;
+    }
+    if (!session?.user?.id) {
+      return;
+    }
+    const response = await fetch("/api/reminders/send-overdue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: session.user.id }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setToast({
+        message: data?.error || "Failed to send reminders. Please try again.",
+        variant: "warning",
+      });
+      return;
+    }
+    if (!data?.sentCount && data?.error) {
+      setToast({ message: data.error, variant: "warning" });
+      return;
+    }
+    setReminderBalance(Number(data.balance ?? reminderBalance));
+    setToast({ message: "Reminders sent.", variant: "success" });
+  };
+
   const handleTopup = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!session?.user?.id) {
@@ -458,8 +505,8 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center gap-2">
-              <Image src="/logo.jpg" alt="Cred logo" width={32} height={32} />
-              <h1 className="text-2xl font-bold text-teal-600">Cred</h1>
+              <Image src="/logo.jpeg" alt="Holwa logo" width={32} height={32} />
+              <h1 className="text-2xl font-bold text-blue-700">Holwa</h1>
             </div>
             <div className="flex items-center gap-4">
               <span className="text-gray-700">
@@ -483,67 +530,58 @@ export default function DashboardPage() {
             <h2 className="text-2xl font-semibold text-gray-800 mt-2">
               {formatMoney(totalOwed)}
             </h2>
+            <button
+              onClick={() => setIsAddDialogOpen(true)}
+              className="mt-4 inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+            >
+              Add Credit
+            </button>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
             <p className="text-sm text-gray-500">Reminders</p>
-            <h2 className="text-2xl font-semibold text-gray-800 mt-2">
-              {reminderBalance}
-            </h2>
-            <p className="mt-2 text-xs text-gray-500">
-              Mpesa reminders will show here once money is loaded.
-            </p>
+            <div className="mt-2 flex items-center justify-between gap-4">
+              <h2 className="text-2xl font-semibold text-gray-800">
+                {reminderBalance}
+              </h2>
+              <button
+                onClick={() => setIsTopupOpen(true)}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+              >
+                Recharge
+              </button>
+            </div>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
             <p className="text-sm text-gray-500">Due today</p>
             <h2 className="text-2xl font-semibold text-gray-800 mt-2">
               {dueTodayCount}
             </h2>
+            <button
+              onClick={handleSendAllDueToday}
+              disabled={dueTodayCount === 0}
+              className="mt-4 inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Send due today
+            </button>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
             <p className="text-sm text-gray-500">Overdue</p>
             <h2 className="text-2xl font-semibold text-gray-800 mt-2">
-              {credits.filter((record) => record.status === "OVERDUE").length}
+              {overdueCount}
             </h2>
+            <button
+              onClick={handleSendOverdue}
+              disabled={overdueCount === 0}
+              className="mt-4 inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Send overdue
+            </button>
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Reminders available</p>
-              <p className="mt-1 text-sm text-gray-600">
-                {reminders.length > 0
-                  ? "You have reminders waiting to be sent."
-                  : "No reminders due in the next 7 days."}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <button
-                onClick={handleSendAllDueToday}
-                disabled={dueTodayCount === 0}
-                className="inline-flex items-center justify-center rounded-lg border border-teal-200 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Send all due today
-              </button>
-              <button
-                onClick={() => setIsTopupOpen(true)}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-50"
-              >
-                Load Credits
-              </button>
-              <button
-                onClick={() => setIsAddDialogOpen(true)}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
-              >
-                Add Credit
-              </button>
-            </div>
-          </div>
-        </div>
-
         <div className="bg-white rounded-lg shadow">
           <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
             <h3 className="text-lg font-semibold text-gray-800">
-              Customers Owed
+              List of Creditors
             </h3>
             <div className="w-full max-w-xs">
               <input
@@ -551,7 +589,7 @@ export default function DashboardPage() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Search customers"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
           </div>
@@ -589,7 +627,7 @@ export default function DashboardPage() {
                         event.target.value as CreditRecord["status"]
                       )
                     }
-                    className="mt-1 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="mt-1 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   >
                     {Object.entries(statusLabels).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -600,7 +638,7 @@ export default function DashboardPage() {
                 </div>
                 <button
                   onClick={() => setSelectedRecord(record)}
-                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-50"
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
                 >
                   View
                 </button>
@@ -646,8 +684,8 @@ export default function DashboardPage() {
       </main>
 
       {isAddDialogOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-800">
                 Add Credit
@@ -668,7 +706,7 @@ export default function DashboardPage() {
                   type="text"
                   value={formState.customerName}
                   onChange={handleInputChange("customerName")}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   required
                 />
               </div>
@@ -681,7 +719,7 @@ export default function DashboardPage() {
                   value={formState.customerPhone}
                   onChange={handleInputChange("customerPhone")}
                   placeholder="+254..."
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   required
                 />
               </div>
@@ -702,7 +740,7 @@ export default function DashboardPage() {
                           handleItemChange(index, "name", event.target.value)
                         }
                         placeholder="Item name"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                         required
                       />
                       <input
@@ -714,7 +752,7 @@ export default function DashboardPage() {
                           handleItemChange(index, "quantity", event.target.value)
                         }
                         placeholder="Qty"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                         required
                       />
                       <input
@@ -726,7 +764,7 @@ export default function DashboardPage() {
                           handleItemChange(index, "unitPrice", event.target.value)
                         }
                         placeholder="Unit price"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                         required
                       />
                       <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700 md:justify-end">
@@ -746,7 +784,7 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={handleAddItem}
-                    className="text-sm font-medium text-teal-700 hover:text-teal-500"
+                    className="text-sm font-medium text-blue-700 hover:text-blue-600"
                   >
                     + Add another item
                   </button>
@@ -762,7 +800,7 @@ export default function DashboardPage() {
                   step="0.01"
                   value={formState.amountPaid}
                   onChange={handleInputChange("amountPaid")}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
               <div>
@@ -773,7 +811,7 @@ export default function DashboardPage() {
                   type="date"
                   value={formState.dueDate}
                   onChange={handleInputChange("dueDate")}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   required
                 />
               </div>
@@ -788,7 +826,7 @@ export default function DashboardPage() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
                 >
                   {isSubmitting ? "Saving..." : "Save Credit"}
                 </button>
@@ -822,7 +860,7 @@ export default function DashboardPage() {
                   value={topupPhone}
                   onChange={(event) => setTopupPhone(event.target.value)}
                   placeholder="+254..."
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   required
                 />
               </div>
@@ -836,11 +874,11 @@ export default function DashboardPage() {
                   step="10"
                   value={topupAmount}
                   onChange={(event) => setTopupAmount(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   required
                 />
               </div>
-              <div className="rounded-lg border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
                 Each Ksh 10 adds 3 reminder credits.
               </div>
               <div className="flex justify-end gap-3 pt-2">
@@ -854,7 +892,7 @@ export default function DashboardPage() {
                 <button
                   type="submit"
                   disabled={isTopupSubmitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
                 >
                   {isTopupSubmitting ? "Sending..." : "Send STK Push"}
                 </button>
@@ -952,7 +990,7 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={() => setSelectedRecord(null)}
-                className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700"
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
               >
                 Close
               </button>

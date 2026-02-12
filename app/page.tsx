@@ -67,13 +67,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 to-emerald-100 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-emerald-100 px-4">
       <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-2xl shadow-xl">
         {/* Logo/Header */}
         <div className="text-center">
           <div className="flex justify-center items-center gap-2 mb-2">
-            <Image src="/logo.jpg" alt="Cred logo" width={36} height={36} />
-            <h1 className="text-4xl font-bold text-teal-600">Cred</h1>
+            <Image src="/logo.jpeg" alt="Holwa logo" width={36} height={36} />
+            <h1 className="text-4xl font-bold text-blue-700">Holwa</h1>
           </div>
           <h2 className="text-2xl font-semibold text-gray-800">Welcome back</h2>
           <p className="mt-2 text-sm text-gray-600">
@@ -103,7 +103,7 @@ export default function LoginPage() {
                 required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+                className="appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
                 placeholder="+254..."
               />
             </div>
@@ -119,7 +119,7 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+                className="appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
                 placeholder="Enter your password"
               />
             </div>
@@ -131,7 +131,7 @@ export default function LoginPage() {
                 id="remember-me"
                 name="remember-me"
                 type="checkbox"
-                className="h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300 rounded"
+                className="h-4 w-4 text-blue-700 focus:ring-blue-600 border-gray-300 rounded"
               />
               <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
                 Remember me
@@ -139,7 +139,7 @@ export default function LoginPage() {
             </div>
 
             <div className="text-sm">
-              <a href="#" className="font-medium text-teal-600 hover:text-teal-500">
+              <a href="#" className="font-medium text-blue-700 hover:text-blue-600">
                 Forgot password?
               </a>
             </div>
@@ -149,7 +149,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-700 hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
               {isLoading ? "Signing in..." : "Sign in"}
             </button>
@@ -172,7 +172,7 @@ export default function LoginPage() {
             type="button"
             onClick={handleGoogleSignIn}
             disabled={isLoading}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -200,7 +200,7 @@ export default function LoginPage() {
         <div className="text-center">
           <p className="text-sm text-gray-600">
             Don&apos;t have an account?{" "}
-            <Link href="/signup" className="font-medium text-teal-600 hover:text-teal-500">
+            <Link href="/signup" className="font-medium text-blue-700 hover:text-blue-600">
               Sign up
             </Link>
           </p>
