@@ -32,6 +32,16 @@ type CreditRecord = {
   items: CreditItem[];
 };
 
+type StockItem = {
+  id: string;
+  product: string;
+  buyingPrice: number;
+  sellingPrice: number;
+  quantity: number;
+  supplierPhone: string;
+  createdAt: string;
+};
+
 const today = new Date();
 
 function formatMoney(amount: number) {
@@ -86,6 +96,20 @@ export default function DashboardPage() {
   const [topupPhone, setTopupPhone] = useState("");
   const [topupAmount, setTopupAmount] = useState("10");
   const [isTopupSubmitting, setIsTopupSubmitting] = useState(false);
+  const [isStockDialogOpen, setIsStockDialogOpen] = useState(false);
+  const [isStockSubmitting, setIsStockSubmitting] = useState(false);
+  const [stockItems, setStockItems] = useState<StockItem[]>([]);
+  const [stockReduceAmounts, setStockReduceAmounts] = useState<
+    Record<string, string>
+  >({});
+  const [selectedStock, setSelectedStock] = useState<StockItem | null>(null);
+  const [stockForm, setStockForm] = useState({
+    product: "",
+    buyingPrice: "",
+    sellingPrice: "",
+    quantity: "",
+    supplierPhone: "",
+  });
   const [formState, setFormState] = useState({
     customerName: "",
     customerPhone: "",
@@ -115,7 +139,17 @@ export default function DashboardPage() {
       setReminderBalance(Number(data.balance || 0));
     };
 
+    const fetchStock = async () => {
+      const response = await fetch(`/api/stock?userId=${session.user.id}`);
+      if (!response.ok) {
+        return;
+      }
+      const data = await response.json();
+      setStockItems(data.items || []);
+    };
+
     fetchCredits();
+    fetchStock();
   }, [session?.user?.id]);
 
   const totalOwed = useMemo(
@@ -127,6 +161,14 @@ export default function DashboardPage() {
           0
         ),
     [credits]
+  );
+  const stockValue = useMemo(
+    () =>
+      stockItems.reduce(
+        (sum, item) => sum + Number(item.buyingPrice) * item.quantity,
+        0
+      ),
+    [stockItems]
   );
 
   const reminders = useMemo(
@@ -445,6 +487,121 @@ export default function DashboardPage() {
     setToast({ message: "Reminders sent.", variant: "success" });
   };
 
+  const handleStockInputChange = (field: keyof typeof stockForm) => {
+    return (event: React.ChangeEvent<HTMLInputElement>) => {
+      setStockForm((prev) => ({
+        ...prev,
+        [field]: event.target.value,
+      }));
+    };
+  };
+
+  const handleAddStock = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!session?.user?.id) {
+      return;
+    }
+    if (
+      !stockForm.product ||
+      !stockForm.buyingPrice ||
+      !stockForm.sellingPrice ||
+      !stockForm.quantity ||
+      !stockForm.supplierPhone
+    ) {
+      return;
+    }
+
+    setIsStockSubmitting(true);
+    try {
+      const response = await fetch("/api/stock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: session.user.id,
+          product: stockForm.product.trim(),
+          buyingPrice: Number(stockForm.buyingPrice),
+          sellingPrice: Number(stockForm.sellingPrice),
+          quantity: Number(stockForm.quantity),
+          supplierPhone: stockForm.supplierPhone.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        setToast({
+          message: "Failed to add stock. Please try again.",
+          variant: "warning",
+        });
+        return;
+      }
+      const data = await response.json();
+      setStockItems((prev) => [data.item, ...prev]);
+      setStockForm({
+        product: "",
+        buyingPrice: "",
+        sellingPrice: "",
+        quantity: "",
+        supplierPhone: "",
+      });
+      setIsStockDialogOpen(false);
+      setToast({ message: "Stock item added.", variant: "success" });
+    } finally {
+      setIsStockSubmitting(false);
+    }
+  };
+
+  const handleReduceStock = async (itemId: string) => {
+    if (!session?.user?.id) {
+      return;
+    }
+    const reduceBy = Number(stockReduceAmounts[itemId] || 0);
+    if (!Number.isFinite(reduceBy) || reduceBy <= 0) {
+      setToast({
+        message: "Enter a valid quantity to reduce.",
+        variant: "warning",
+      });
+      return;
+    }
+
+    const response = await fetch(`/api/stock/${itemId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reduceBy }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setToast({
+        message: data?.error || "Failed to reduce stock.",
+        variant: "warning",
+      });
+      return;
+    }
+    setStockItems((prev) =>
+      prev.map((item) => (item.id === itemId ? data.item : item))
+    );
+    setStockReduceAmounts((prev) => ({ ...prev, [itemId]: "" }));
+    setToast({ message: "Stock updated.", variant: "success" });
+  };
+
+  const handleNotifySupplier = async (itemId: string) => {
+    if (!session?.user?.id) {
+      return;
+    }
+    const response = await fetch("/api/stock/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: session.user.id, itemId }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setToast({
+        message: data?.error || "Failed to notify supplier.",
+        variant: "warning",
+      });
+      return;
+    }
+    setToast({ message: "Supplier notified.", variant: "success" });
+  };
+
   const handleTopup = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!session?.user?.id) {
@@ -530,12 +687,9 @@ export default function DashboardPage() {
             <h2 className="text-2xl font-semibold text-gray-800 mt-2">
               {formatMoney(totalOwed)}
             </h2>
-            <button
-              onClick={() => setIsAddDialogOpen(true)}
-              className="mt-4 inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
-            >
-              Add Credit
-            </button>
+            <p className="mt-2 text-sm text-gray-500">
+              Stock value: {formatMoney(stockValue)}
+            </p>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
             <p className="text-sm text-gray-500">Reminders</p>
@@ -580,18 +734,34 @@ export default function DashboardPage() {
         </div>
         <div className="bg-white rounded-lg shadow">
           <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
-            <h3 className="text-lg font-semibold text-gray-800">
-              List of Creditors
-            </h3>
-            <div className="w-full max-w-xs">
-              <input
-                type="search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search customers"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-              />
+            <div className="flex items-center justify-between gap-3 md:justify-start">
+              <h3 className="text-lg font-semibold text-gray-800">
+                List of Creditors
+              </h3>
+              <button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 md:hidden"
+              >
+                Add Credit
+              </button>
             </div>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center md:flex-1 md:justify-center">
+              <div className="w-full max-w-xs">
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search customers"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => setIsAddDialogOpen(true)}
+              className="hidden md:inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+            >
+              Add Credit
+            </button>
           </div>
           <div className="divide-y">
             {paginatedCredits.map((record) => (
@@ -679,6 +849,69 @@ export default function DashboardPage() {
                 Next
               </button>
             </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow">
+          <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
+            <h3 className="text-lg font-semibold text-gray-800">Stock items</h3>
+            <button
+              onClick={() => setIsStockDialogOpen(true)}
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+            >
+              Add stock
+            </button>
+          </div>
+          <div className="divide-y">
+            {stockItems.length === 0 ? (
+              <div className="px-6 py-6 text-sm text-gray-500">
+                No stock items added yet.
+              </div>
+            ) : (
+              stockItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-col md:flex-row md:items-center md:justify-between px-6 py-4 gap-4"
+                >
+                  <div>
+                    <p className="text-sm text-gray-500">Product</p>
+                    <p className="text-base font-semibold text-gray-800">
+                      {item.product}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Alert</p>
+                    <p
+                      className={`text-base font-semibold ${
+                        item.quantity < 5
+                          ? "text-red-600"
+                          : item.quantity < 10
+                          ? "text-amber-600"
+                          : "text-emerald-600"
+                      }`}
+                    >
+                      {item.quantity < 5
+                        ? "Extremely low"
+                        : item.quantity < 10
+                        ? "Low"
+                        : "Normal"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedStock(item)}
+                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => handleNotifySupplier(item.id)}
+                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+                  >
+                    Notify supplier
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </main>
@@ -991,6 +1224,197 @@ export default function DashboardPage() {
               <button
                 onClick={() => setSelectedRecord(null)}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isStockDialogOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800">Add stock</h3>
+              <button
+                onClick={() => setIsStockDialogOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <form className="mt-4 space-y-4" onSubmit={handleAddStock}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Product
+                </label>
+                <input
+                  type="text"
+                  value={stockForm.product}
+                  onChange={handleStockInputChange("product")}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Buying price
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={stockForm.buyingPrice}
+                  onChange={handleStockInputChange("buyingPrice")}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Selling price
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={stockForm.sellingPrice}
+                  onChange={handleStockInputChange("sellingPrice")}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Quantity
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={stockForm.quantity}
+                  onChange={handleStockInputChange("quantity")}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Supplier phone
+                </label>
+                <input
+                  type="tel"
+                  value={stockForm.supplierPhone}
+                  onChange={handleStockInputChange("supplierPhone")}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStockDialogOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isStockSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+                >
+                  {isStockSubmitting ? "Saving..." : "Save stock"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+      {selectedStock ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800">
+                Stock details
+              </h3>
+              <button
+                onClick={() => setSelectedStock(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-4 space-y-3 text-sm text-gray-700">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Product</span>
+                <span className="font-medium">{selectedStock.product}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Buying price</span>
+                <span className="font-medium">
+                  {formatMoney(Number(selectedStock.buyingPrice))}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Selling price</span>
+                <span className="font-medium">
+                  {formatMoney(Number(selectedStock.sellingPrice))}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Quantity</span>
+                <span className="font-medium">{selectedStock.quantity}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Supplier phone</span>
+                <span className="font-medium">
+                  {selectedStock.supplierPhone}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Created</span>
+                <span className="font-medium">
+                  {formatDate(selectedStock.createdAt)}
+                </span>
+              </div>
+              <div className="pt-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Reduce quantity
+                </label>
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={stockReduceAmounts[selectedStock.id] || ""}
+                    onChange={(event) =>
+                      setStockReduceAmounts((prev) => ({
+                        ...prev,
+                        [selectedStock.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="Qty sold"
+                    className="w-32 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <button
+                    onClick={() => handleReduceStock(selectedStock.id)}
+                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
+                  >
+                    Reduce
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => handleNotifySupplier(selectedStock.id)}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+              >
+                Notify supplier
+              </button>
+              <button
+                onClick={() => setSelectedStock(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Close
               </button>

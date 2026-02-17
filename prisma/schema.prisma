@@ -127,3 +127,15 @@ model CreditItem {
 
   credit Credit @relation(fields: [creditId], references: [id], onDelete: Cascade)
 }
+
+model StockItem {
+  id            String   @id @default(cuid())
+  userId        String
+  product       String
+  buyingPrice   Decimal  @db.Decimal(10, 2)
+  sellingPrice  Decimal  @db.Decimal(10, 2)
+  quantity      Int
+  supplierPhone String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
