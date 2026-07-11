@@ -47,8 +47,9 @@ This project uses:
    ```
 
 2. Set up environment variables:
-   Create a `.env.local` file in the root directory with:
+   Copy `.env.example` to `.env.local` and fill in your values:
    ```env
+   DATABASE_URL=your_neon_database_url
    NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
    NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
@@ -59,6 +60,7 @@ This project uses:
    AFRICAS_TALKING_USERNAME=your_africas_talking_username
    AFRICAS_TALKING_API_KEY=your_africas_talking_api_key
    AFRICAS_TALKING_SENDER_ID=your_sender_id
+   INTASEND_SECRET_KEY=your_intasend_secret_key
    ```
 
 3. Run the development server:
@@ -74,6 +76,10 @@ The app includes:
 - **Login page** (root page `/`) with phone/password and Google sign-in through Firebase
 - **Sign up page** (`/signup`) with phone/password and Google sign-up through Firebase
 - **Protected dashboard** (`/dashboard`) - requires authentication
+
+## Deployment
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for Vercel setup, required environment variables, Firebase authorized domains, and the later Render/Cloud Run backend split plan.
 
 ## Next Steps
 
