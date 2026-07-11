@@ -27,6 +27,19 @@ enum TopupStatus {
   FAILED
 }
 
+enum UserRole {
+  BUSINESS
+  SUPPLIER
+  INDIVIDUAL
+}
+
+enum PaymentMode {
+  POCHI
+  PAY_BILL
+  CASH
+  TILL
+}
+
 model User {
   id            String   @id @default(cuid())
   email         String   @unique
@@ -40,11 +53,42 @@ model User {
   sessions  Session[]
 }
 
+model UserProfile {
+  id           String       @id @default(cuid())
+  userId       String       @unique
+  role         UserRole
+  businessName String?
+  county       String?
+  town         String?
+  estate       String?
+  phoneNumber  String?
+  paymentMode  PaymentMode?
+  description  String?      @db.Text
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([role])
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  phone     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  credits Credit[]
+
+  @@unique([userId, phone])
+  @@index([userId])
+}
+
 model Account {
   id                    String    @id @default(cuid())
   userId                String
   providerId            String    @map("provider")
-  accountId             String    // Better Auth uses this field name (was providerAccountId)
+  accountId             String
   password              String?   @db.Text
   accessToken           String?   @db.Text
   idToken               String?   @db.Text
@@ -84,6 +128,7 @@ model Verification {
 model Credit {
   id           String       @id @default(cuid())
   userId       String
+  customerId   String
   customerName String
   customerPhone String     @default("")
   dueDate      DateTime
@@ -93,7 +138,11 @@ model Credit {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  items CreditItem[]
+  customer Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items    CreditItem[]
+
+  @@index([userId])
+  @@index([customerId])
 }
 
 model CreditBalance {
@@ -136,6 +185,57 @@ model StockItem {
   sellingPrice  Decimal  @db.Decimal(10, 2)
   quantity      Int
   supplierPhone String
+  offers        String?  @db.Text
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model SupplierOrder {
+  id           String   @id @default(cuid())
+  supplierId   String
+  buyerUserId  String
+  buyerName    String
+  buyerPhone   String?
+  status       String   @default("SENT")
+  totalAmount  Decimal  @db.Decimal(10, 2)
+  smsStatus    String?
+  smsMessageId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items SupplierOrderItem[]
+
+  @@index([supplierId])
+  @@index([buyerUserId])
+}
+
+model SupplierOrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  product   String
+  price     Decimal @db.Decimal(10, 2)
+  quantity  Int
+  offers    String? @db.Text
+
+  order SupplierOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model RestockRequest {
+  id             String   @id @default(cuid())
+  supplierUserId String
+  businessUserId String
+  stockItemId    String?
+  product        String
+  quantity       Int?
+  status         String   @default("SENT")
+  smsStatus      String?
+  smsMessageId   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([supplierUserId])
+  @@index([businessUserId])
+  @@index([stockItemId])
 }

@@ -19,7 +19,7 @@ export async function PATCH(
   const credit = await prisma.credit.update({
     where: { id },
     data: { status: body.status },
-    include: { items: true },
+    include: { customer: true, items: true },
   });
 
   return NextResponse.json({ credit });

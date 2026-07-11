@@ -4,6 +4,15 @@ import { useSession, signOut } from "@/lib/auth-client";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import {
+  isUserRole,
+  needsBusinessProfile,
+  paymentModeLabels,
+  paymentModes,
+  roleLabels,
+  type PaymentMode,
+  type UserRole,
+} from "@/lib/user-profile";
 
 type CreditItem = {
   id: string;
@@ -11,6 +20,12 @@ type CreditItem = {
   quantity: number;
   unitPrice: number;
   total: number;
+};
+
+type CustomerInfo = {
+  id: string;
+  name: string;
+  phone: string;
 };
 
 type CreditItemDraft = {
@@ -22,6 +37,7 @@ type CreditItemDraft = {
 
 type CreditRecord = {
   id: string;
+  customerId?: string;
   customerName: string;
   customerPhone: string;
   dueDate: string;
@@ -29,7 +45,20 @@ type CreditRecord = {
   amountPaid: number;
   status: "PENDING" | "DUE" | "OVERDUE" | "PARTIALLY_PAID" | "PAID";
   createdAt: string;
+  customer?: CustomerInfo;
   items: CreditItem[];
+};
+
+type CustomerCreditGroup = {
+  key: string;
+  name: string;
+  phone: string;
+  credits: CreditRecord[];
+  unpaidCredits: CreditRecord[];
+  unpaidItems: CreditItem[];
+  totalUnpaid: number;
+  earliestDueDate: string | null;
+  status: CreditRecord["status"];
 };
 
 type StockItem = {
@@ -39,10 +68,69 @@ type StockItem = {
   sellingPrice: number;
   quantity: number;
   supplierPhone: string;
+  offers?: string | null;
   createdAt: string;
 };
 
+type UserProfile = {
+  id: string;
+  userId: string;
+  role: UserRole;
+  businessName: string | null;
+  county: string | null;
+  town: string | null;
+  estate: string | null;
+  phoneNumber: string | null;
+  paymentMode: PaymentMode | null;
+  description: string | null;
+};
+
+type ProfileForm = {
+  businessName: string;
+  county: string;
+  town: string;
+  estate: string;
+  phoneNumber: string;
+  paymentMode: PaymentMode | "";
+  description: string;
+};
+
+type InboxItem = {
+  id: string;
+  title: string;
+  body: string;
+  variant: "info" | "warning";
+};
+
+type SupplierProfile = UserProfile;
+
+type SupplierCustomerStockItem = {
+  id: string;
+  product: string;
+  quantity: number;
+  sellingPrice: number;
+  status: string;
+  isLow: boolean;
+};
+
+type SupplierCustomer = {
+  profile: UserProfile;
+  lastOrderAt: string | null;
+  orderedProducts: string[];
+  stockItems: SupplierCustomerStockItem[];
+};
+
 const today = new Date();
+const selectedRoleStorageKey = "holwa:selected-role";
+const emptyProfileForm: ProfileForm = {
+  businessName: "",
+  county: "",
+  town: "",
+  estate: "",
+  phoneNumber: "",
+  paymentMode: "",
+  description: "",
+};
 
 function formatMoney(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -76,11 +164,78 @@ const statusLabels: Record<CreditRecord["status"], string> = {
   PAID: "Paid",
 };
 
+function normalizePhone(value: string) {
+  return value.trim().replace(/\s+/g, "");
+}
+
+function amountOwed(record: CreditRecord) {
+  return Number(record.totalAmount) - Number(record.amountPaid);
+}
+
+function isUnpaid(record: CreditRecord) {
+  return record.status !== "PAID" && amountOwed(record) > 0;
+}
+
+function getCustomerKey(record: CreditRecord) {
+  return (
+    record.customer?.id ||
+    record.customerId ||
+    normalizePhone(record.customerPhone) ||
+    record.customerName.trim().toLowerCase()
+  );
+}
+
+function getGroupStatus(records: CreditRecord[]): CreditRecord["status"] {
+  if (!records.length) {
+    return "PAID";
+  }
+  if (records.some((record) => record.status === "OVERDUE")) {
+    return "OVERDUE";
+  }
+  if (records.some((record) => record.status === "DUE")) {
+    return "DUE";
+  }
+  if (records.some((record) => record.status === "PARTIALLY_PAID")) {
+    return "PARTIALLY_PAID";
+  }
+  return "PENDING";
+}
+
+function toProfileForm(profile: UserProfile): ProfileForm {
+  return {
+    businessName: profile.businessName || "",
+    county: profile.county || "",
+    town: profile.town || "",
+    estate: profile.estate || "",
+    phoneNumber: profile.phoneNumber || "",
+    paymentMode: profile.paymentMode || "",
+    description: profile.description || "",
+  };
+}
+
+function hasBusinessProfileDetails(profile: UserProfile) {
+  if (!needsBusinessProfile(profile.role)) {
+    return true;
+  }
+
+  return Boolean(
+    profile.businessName &&
+      profile.county &&
+      profile.town &&
+      profile.estate &&
+      profile.phoneNumber &&
+      profile.paymentMode &&
+      profile.description
+  );
+}
+
 export default function DashboardPage() {
-  const { data: session, isPending } = useSession();
+  const sessionResult = useSession();
   const router = useRouter();
+  const session = sessionResult.data;
+  const isPending = sessionResult.isPending;
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<CreditRecord | null>(
+  const [selectedCustomerKey, setSelectedCustomerKey] = useState<string | null>(
     null
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -103,13 +258,38 @@ export default function DashboardPage() {
     Record<string, string>
   >({});
   const [selectedStock, setSelectedStock] = useState<StockItem | null>(null);
+  const [stockEditingItem, setStockEditingItem] = useState<StockItem | null>(
+    null
+  );
   const [stockForm, setStockForm] = useState({
     product: "",
     buyingPrice: "",
     sellingPrice: "",
     quantity: "",
     supplierPhone: "",
+    offers: "",
   });
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [pendingProfileRole, setPendingProfileRole] =
+    useState<UserRole | null>(null);
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [isProfileSubmitting, setIsProfileSubmitting] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileForm, setProfileForm] =
+    useState<ProfileForm>(emptyProfileForm);
+  const [isInboxOpen, setIsInboxOpen] = useState(false);
+  const [isSuppliersDrawerOpen, setIsSuppliersDrawerOpen] = useState(false);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [suppliers, setSuppliers] = useState<SupplierProfile[]>([]);
+  const [isSuppliersLoading, setIsSuppliersLoading] = useState(false);
+  const [isCustomersDrawerOpen, setIsCustomersDrawerOpen] = useState(false);
+  const [supplierCustomers, setSupplierCustomers] = useState<
+    SupplierCustomer[]
+  >([]);
+  const [isCustomersLoading, setIsCustomersLoading] = useState(false);
+  const [restockRequestIds, setRestockRequestIds] = useState<
+    Record<string, boolean>
+  >({});
   const [formState, setFormState] = useState({
     customerName: "",
     customerPhone: "",
@@ -117,12 +297,142 @@ export default function DashboardPage() {
     amountPaid: "",
     items: [{ id: crypto.randomUUID(), name: "", quantity: "", unitPrice: "" }],
   });
+  const isSupplierDashboard = userProfile?.role === "SUPPLIER";
+  const isBusinessDashboard = userProfile?.role === "BUSINESS";
+  const profileImage =
+    session?.user && "image" in session.user ? session.user.image : null;
+  const canDismissProfileDialog = userProfile
+    ? hasBusinessProfileDetails(userProfile)
+    : false;
 
   useEffect(() => {
     if (!isPending && !session) {
       router.push("/");
     }
   }, [session, isPending, router]);
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadProfile = async () => {
+      const storedRole = window.localStorage.getItem(selectedRoleStorageKey);
+      const selectedRole = isUserRole(storedRole) ? storedRole : null;
+
+      try {
+        const response = await fetch(`/api/profile?userId=${session.user.id}`);
+        if (!response.ok) {
+          throw new Error("Failed to load profile");
+        }
+
+        const data = (await response.json()) as {
+          profile: UserProfile | null;
+        };
+
+        if (!isActive) {
+          return;
+        }
+
+        if (data.profile) {
+          if (selectedRole && selectedRole !== data.profile.role) {
+            if (
+              selectedRole === "INDIVIDUAL" ||
+              hasBusinessProfileDetails(data.profile)
+            ) {
+              const saveResponse = await fetch("/api/profile", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  userId: session.user.id,
+                  role: selectedRole,
+                  businessName: data.profile.businessName || "",
+                  county: data.profile.county || "",
+                  town: data.profile.town || "",
+                  estate: data.profile.estate || "",
+                  phoneNumber: data.profile.phoneNumber || "",
+                  paymentMode: data.profile.paymentMode || "",
+                  description: data.profile.description || "",
+                }),
+              });
+
+              if (!saveResponse.ok) {
+                throw new Error("Failed to save profile");
+              }
+
+              const saved = (await saveResponse.json()) as {
+                profile: UserProfile;
+              };
+
+              if (isActive) {
+                setUserProfile(saved.profile);
+                window.localStorage.removeItem(selectedRoleStorageKey);
+              }
+              return;
+            }
+
+            setUserProfile(data.profile);
+            router.push("/profile?setup=1");
+            return;
+          }
+
+          setUserProfile(data.profile);
+          if (!hasBusinessProfileDetails(data.profile)) {
+            router.push("/profile?setup=1");
+          } else {
+            window.localStorage.removeItem(selectedRoleStorageKey);
+          }
+          return;
+        }
+
+        if (!selectedRole) {
+          return;
+        }
+
+        if (selectedRole === "INDIVIDUAL") {
+          const saveResponse = await fetch("/api/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: session.user.id,
+              role: selectedRole,
+            }),
+          });
+
+          if (!saveResponse.ok) {
+            throw new Error("Failed to save profile");
+          }
+
+          const saved = (await saveResponse.json()) as {
+            profile: UserProfile;
+          };
+
+          if (isActive) {
+            setUserProfile(saved.profile);
+            window.localStorage.removeItem(selectedRoleStorageKey);
+          }
+          return;
+        }
+
+        router.push("/profile?setup=1");
+      } catch (error) {
+        if (isActive) {
+          setToast({
+            message: "Profile setup could not load. You can keep using the dashboard.",
+            variant: "warning",
+          });
+        }
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      isActive = false;
+    };
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id) {
@@ -155,11 +465,8 @@ export default function DashboardPage() {
   const totalOwed = useMemo(
     () =>
       credits
-        .filter((record) => record.status !== "PAID")
-        .reduce(
-          (sum, record) => sum + (record.totalAmount - record.amountPaid),
-          0
-        ),
+        .filter(isUnpaid)
+        .reduce((sum, record) => sum + amountOwed(record), 0),
     [credits]
   );
   const stockValue = useMemo(
@@ -188,24 +495,170 @@ export default function DashboardPage() {
     () => credits.filter((record) => record.status === "OVERDUE").length,
     [credits]
   );
-  const filteredCredits = useMemo(() => {
+  const lowStockItems = useMemo(
+    () => stockItems.filter((item) => item.quantity < 10),
+    [stockItems]
+  );
+  const inboxItems = useMemo<InboxItem[]>(() => {
+    const items: InboxItem[] = [];
+
+    if (isProfileDialogOpen && pendingProfileRole) {
+      items.push({
+        id: "profile",
+        title: "Complete your profile",
+        body: `${roleLabels[pendingProfileRole]} users need profile details before continuing.`,
+        variant: "warning",
+      });
+    }
+
+    if (overdueCount > 0) {
+      items.push({
+        id: "overdue",
+        title: "Overdue credits",
+        body: `${overdueCount} credit record${
+          overdueCount === 1 ? " is" : "s are"
+        } overdue.`,
+        variant: "warning",
+      });
+    }
+
+    if (dueTodayCount > 0) {
+      items.push({
+        id: "due-today",
+        title: "Due today",
+        body: `${dueTodayCount} credit record${
+          dueTodayCount === 1 ? " is" : "s are"
+        } due today.`,
+        variant: "info",
+      });
+    }
+
+    if (lowStockItems.length > 0) {
+      items.push({
+        id: "low-stock",
+        title: "Low stock",
+        body: `${lowStockItems.length} stock item${
+          lowStockItems.length === 1 ? " needs" : "s need"
+        } attention.`,
+        variant: "warning",
+      });
+    }
+
+    if (reminderBalance === 0) {
+      items.push({
+        id: "reminders",
+        title: "Reminder credits",
+        body: "Recharge reminder credits before sending customer SMS.",
+        variant: "info",
+      });
+    }
+
+    return items;
+  }, [
+    dueTodayCount,
+    isProfileDialogOpen,
+    lowStockItems.length,
+    overdueCount,
+    pendingProfileRole,
+    reminderBalance,
+  ]);
+  const filteredSuppliers = useMemo(() => {
+    const term = supplierSearch.trim().toLowerCase();
+    if (!term) {
+      return suppliers;
+    }
+
+    return suppliers.filter((supplier) => {
+      const haystack = [
+        supplier.businessName,
+        supplier.county,
+        supplier.town,
+        supplier.estate,
+        supplier.description,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(term);
+    });
+  }, [supplierSearch, suppliers]);
+  const customerGroups = useMemo<CustomerCreditGroup[]>(() => {
+    const groups = new Map<string, CustomerCreditGroup>();
+
+    credits.forEach((record) => {
+      const key = getCustomerKey(record);
+      const existing = groups.get(key);
+      const name = record.customer?.name || record.customerName;
+      const phone = record.customer?.phone || record.customerPhone;
+
+      if (!existing) {
+        groups.set(key, {
+          key,
+          name,
+          phone,
+          credits: [record],
+          unpaidCredits: isUnpaid(record) ? [record] : [],
+          unpaidItems: isUnpaid(record) ? record.items : [],
+          totalUnpaid: isUnpaid(record) ? amountOwed(record) : 0,
+          earliestDueDate: isUnpaid(record) ? record.dueDate : null,
+          status: isUnpaid(record) ? record.status : "PAID",
+        });
+        return;
+      }
+
+      existing.credits.push(record);
+      if (isUnpaid(record)) {
+        existing.unpaidCredits.push(record);
+        existing.unpaidItems.push(...record.items);
+        existing.totalUnpaid += amountOwed(record);
+        if (
+          !existing.earliestDueDate ||
+          new Date(record.dueDate) < new Date(existing.earliestDueDate)
+        ) {
+          existing.earliestDueDate = record.dueDate;
+        }
+      }
+      existing.status = getGroupStatus(existing.unpaidCredits);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => {
+      if (a.totalUnpaid !== b.totalUnpaid) {
+        return b.totalUnpaid - a.totalUnpaid;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [credits]);
+
+  const selectedCustomerGroup = useMemo(
+    () =>
+      selectedCustomerKey
+        ? customerGroups.find((group) => group.key === selectedCustomerKey) ||
+          null
+        : null,
+    [customerGroups, selectedCustomerKey]
+  );
+
+  const filteredCustomerGroups = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) {
-      return credits;
+      return customerGroups;
     }
-    return credits.filter((record) =>
-      record.customerName.toLowerCase().includes(term)
+    return customerGroups.filter(
+      (group) =>
+        group.name.toLowerCase().includes(term) ||
+        group.phone.toLowerCase().includes(term)
     );
-  }, [credits, searchTerm]);
+  }, [customerGroups, searchTerm]);
   const pageSize = 5;
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredCredits.length / pageSize)
+    Math.ceil(filteredCustomerGroups.length / pageSize)
   );
-  const paginatedCredits = useMemo(() => {
+  const paginatedCustomerGroups = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
-    return filteredCredits.slice(startIndex, startIndex + pageSize);
-  }, [filteredCredits, currentPage]);
+    return filteredCustomerGroups.slice(startIndex, startIndex + pageSize);
+  }, [filteredCustomerGroups, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -288,6 +741,12 @@ export default function DashboardPage() {
         unitPrice: Number(item.unitPrice || 0),
       }));
     const amountPaid = Number(formState.amountPaid || 0);
+    const totalAmount = items.reduce(
+      (sum, item) => sum + item.quantity * item.unitPrice,
+      0
+    );
+    const newAmountOwed = Math.max(0, totalAmount - amountPaid);
+    const customerPhone = normalizePhone(formState.customerPhone);
 
     if (
       !formState.customerName ||
@@ -298,6 +757,33 @@ export default function DashboardPage() {
       return;
     }
 
+    const existingGroup = customerGroups.find(
+      (group) => normalizePhone(group.phone) === customerPhone
+    );
+
+    if (existingGroup && existingGroup.totalUnpaid > 0) {
+      const shouldContinue = window.confirm(
+        [
+          `${existingGroup.name} already has unpaid credit of ${formatMoney(
+            existingGroup.totalUnpaid
+          )}.`,
+          `New credit: ${formatMoney(newAmountOwed)}.`,
+          `Total after adding: ${formatMoney(
+            existingGroup.totalUnpaid + newAmountOwed
+          )}.`,
+          `Unpaid items after adding: ${
+            existingGroup.unpaidItems.length + items.length
+          }.`,
+          "",
+          "Add this credit anyway?",
+        ].join("\n")
+      );
+
+      if (!shouldContinue) {
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const response = await fetch("/api/credits", {
@@ -306,7 +792,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           userId: session.user.id,
           customerName: formState.customerName.trim(),
-          customerPhone: formState.customerPhone.trim(),
+          customerPhone,
           dueDate: formState.dueDate,
           amountPaid,
           items,
@@ -349,9 +835,6 @@ export default function DashboardPage() {
         record.id === recordId ? data.credit : record
       )
     );
-    if (selectedRecord?.id === recordId) {
-      setSelectedRecord(data.credit);
-    }
   };
 
   const handleDeleteCredit = async (recordId: string) => {
@@ -366,9 +849,6 @@ export default function DashboardPage() {
       return;
     }
     setCredits((prev) => prev.filter((record) => record.id !== recordId));
-    if (selectedRecord?.id === recordId) {
-      setSelectedRecord(null);
-    }
     setToast({ message: "Credit deleted.", variant: "success" });
   };
 
@@ -487,8 +967,40 @@ export default function DashboardPage() {
     setToast({ message: "Reminders sent.", variant: "success" });
   };
 
+  const resetStockForm = () => {
+    setStockEditingItem(null);
+    setStockForm({
+      product: "",
+      buyingPrice: "",
+      sellingPrice: "",
+      quantity: isSupplierDashboard ? "1" : "",
+      supplierPhone: userProfile?.phoneNumber || "",
+      offers: "",
+    });
+  };
+
+  const openAddStockDialog = () => {
+    resetStockForm();
+    setIsStockDialogOpen(true);
+  };
+
+  const openEditStockDialog = (item: StockItem) => {
+    setStockEditingItem(item);
+    setStockForm({
+      product: item.product,
+      buyingPrice: String(item.buyingPrice),
+      sellingPrice: String(item.sellingPrice),
+      quantity: String(item.quantity),
+      supplierPhone: item.supplierPhone,
+      offers: item.offers || "",
+    });
+    setIsStockDialogOpen(true);
+  };
+
   const handleStockInputChange = (field: keyof typeof stockForm) => {
-    return (event: React.ChangeEvent<HTMLInputElement>) => {
+    return (
+      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    ) => {
       setStockForm((prev) => ({
         ...prev,
         [field]: event.target.value,
@@ -496,54 +1008,81 @@ export default function DashboardPage() {
     };
   };
 
-  const handleAddStock = async (event: React.FormEvent) => {
+  const handleSaveStock = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!session?.user?.id) {
       return;
     }
+    const sellingPrice = Number(stockForm.sellingPrice);
+    const buyingPrice = isSupplierDashboard
+      ? sellingPrice
+      : Number(stockForm.buyingPrice);
+    const quantity = isSupplierDashboard
+      ? Number(stockForm.quantity || 1)
+      : Number(stockForm.quantity);
+    const supplierPhone = isSupplierDashboard
+      ? stockForm.supplierPhone.trim() || userProfile?.phoneNumber || ""
+      : stockForm.supplierPhone.trim();
+
     if (
       !stockForm.product ||
-      !stockForm.buyingPrice ||
-      !stockForm.sellingPrice ||
-      !stockForm.quantity ||
-      !stockForm.supplierPhone
+      !Number.isFinite(sellingPrice) ||
+      sellingPrice < 0 ||
+      !Number.isFinite(buyingPrice) ||
+      buyingPrice < 0 ||
+      !Number.isFinite(quantity) ||
+      quantity < 0 ||
+      !supplierPhone
     ) {
+      setToast({
+        message: "Please complete the stock item details.",
+        variant: "warning",
+      });
       return;
     }
 
     setIsStockSubmitting(true);
     try {
-      const response = await fetch("/api/stock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: session.user.id,
-          product: stockForm.product.trim(),
-          buyingPrice: Number(stockForm.buyingPrice),
-          sellingPrice: Number(stockForm.sellingPrice),
-          quantity: Number(stockForm.quantity),
-          supplierPhone: stockForm.supplierPhone.trim(),
-        }),
-      });
+      const response = await fetch(
+        stockEditingItem ? `/api/stock/${stockEditingItem.id}` : "/api/stock",
+        {
+          method: stockEditingItem ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: session.user.id,
+            product: stockForm.product.trim(),
+            buyingPrice,
+            sellingPrice,
+            quantity,
+            supplierPhone,
+            offers: stockForm.offers.trim(),
+          }),
+        }
+      );
 
       if (!response.ok) {
         setToast({
-          message: "Failed to add stock. Please try again.",
+          message: stockEditingItem
+            ? "Failed to update stock. Please try again."
+            : "Failed to add stock. Please try again.",
           variant: "warning",
         });
         return;
       }
       const data = await response.json();
-      setStockItems((prev) => [data.item, ...prev]);
-      setStockForm({
-        product: "",
-        buyingPrice: "",
-        sellingPrice: "",
-        quantity: "",
-        supplierPhone: "",
-      });
+      setStockItems((prev) =>
+        stockEditingItem
+          ? prev.map((item) =>
+              item.id === stockEditingItem.id ? data.item : item
+            )
+          : [data.item, ...prev]
+      );
+      resetStockForm();
       setIsStockDialogOpen(false);
-      setToast({ message: "Stock item added.", variant: "success" });
+      setToast({
+        message: stockEditingItem ? "Stock item updated." : "Stock item added.",
+        variant: "success",
+      });
     } finally {
       setIsStockSubmitting(false);
     }
@@ -648,11 +1187,207 @@ export default function DashboardPage() {
         message: "STK Push sent. Confirm on your phone.",
         variant: "success",
       });
+      if (data?.balance !== undefined) {
+        setReminderBalance(Number(data.balance));
+      }
       setIsTopupOpen(false);
       setTopupPhone("");
       setTopupAmount("10");
     } finally {
       setIsTopupSubmitting(false);
+    }
+  };
+
+  const handleProfileInputChange = <K extends keyof ProfileForm>(
+    field: K,
+    value: ProfileForm[K]
+  ) => {
+    setProfileForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const openSuppliersDrawer = async () => {
+    setIsSuppliersDrawerOpen(true);
+    setIsSuppliersLoading(true);
+
+    try {
+      const response = await fetch("/api/profile/suppliers");
+      if (!response.ok) {
+        throw new Error("Failed to load suppliers");
+      }
+
+      const data = (await response.json()) as {
+        suppliers: SupplierProfile[];
+      };
+      setSuppliers(data.suppliers || []);
+    } catch (error) {
+      setToast({
+        message: "Failed to load suppliers. Please try again.",
+        variant: "warning",
+      });
+    } finally {
+      setIsSuppliersLoading(false);
+    }
+  };
+
+  const openCustomersDrawer = async () => {
+    if (!session?.user?.id) {
+      return;
+    }
+
+    setIsCustomersDrawerOpen(true);
+    setIsCustomersLoading(true);
+
+    try {
+      const response = await fetch(
+        `/api/supplier/customers?supplierUserId=${encodeURIComponent(
+          session.user.id
+        )}`
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load customers");
+      }
+
+      const data = (await response.json()) as {
+        customers: SupplierCustomer[];
+      };
+      setSupplierCustomers(data.customers || []);
+    } catch (error) {
+      setToast({
+        message: "Failed to load business stock signals.",
+        variant: "warning",
+      });
+    } finally {
+      setIsCustomersLoading(false);
+    }
+  };
+
+  const handleSendRestockRequest = async (
+    customer: SupplierCustomer,
+    item: SupplierCustomerStockItem
+  ) => {
+    if (!session?.user?.id) {
+      return;
+    }
+
+    setRestockRequestIds((prev) => ({ ...prev, [item.id]: true }));
+
+    try {
+      const response = await fetch("/api/supplier/restock-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplierUserId: session.user.id,
+          businessUserId: customer.profile.userId,
+          stockItemId: item.id,
+        }),
+      });
+      const data = (await response.json()) as {
+        warning?: string;
+        error?: string;
+      };
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Failed to send restock request");
+      }
+
+      setToast({
+        message:
+          data.warning ||
+          `Restock request sent to ${
+            customer.profile.businessName || "business"
+          }.`,
+        variant: data.warning ? "warning" : "success",
+      });
+    } catch (error) {
+      setToast({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to send restock request.",
+        variant: "warning",
+      });
+    } finally {
+      setRestockRequestIds((prev) => ({ ...prev, [item.id]: false }));
+    }
+  };
+
+  const openProfileDialog = () => {
+    if (!userProfile) {
+      return;
+    }
+
+    if (!needsBusinessProfile(userProfile.role)) {
+      setToast({
+        message: "Individual accounts do not need extra profile details yet.",
+        variant: "success",
+      });
+      return;
+    }
+
+    setProfileError("");
+    setPendingProfileRole(userProfile.role);
+    setProfileForm(toProfileForm(userProfile));
+    setIsProfileDialogOpen(true);
+  };
+
+  const handleProfileSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!session?.user?.id || !pendingProfileRole) {
+      return;
+    }
+
+    setProfileError("");
+
+    if (
+      !profileForm.businessName ||
+      !profileForm.county ||
+      !profileForm.town ||
+      !profileForm.estate ||
+      !profileForm.phoneNumber ||
+      !profileForm.paymentMode ||
+      !profileForm.description
+    ) {
+      setProfileError("Please complete all profile fields.");
+      return;
+    }
+
+    setIsProfileSubmitting(true);
+
+    try {
+      const response = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: session.user.id,
+          role: pendingProfileRole,
+          businessName: profileForm.businessName.trim(),
+          county: profileForm.county.trim(),
+          town: profileForm.town.trim(),
+          estate: profileForm.estate.trim(),
+          phoneNumber: profileForm.phoneNumber.trim(),
+          paymentMode: profileForm.paymentMode,
+          description: profileForm.description.trim(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setProfileError(data?.error || "Failed to save profile.");
+        return;
+      }
+
+      setUserProfile(data.profile);
+      setIsProfileDialogOpen(false);
+      setPendingProfileRole(null);
+      window.localStorage.removeItem(selectedRoleStorageKey);
+      setToast({ message: "Profile saved.", variant: "success" });
+    } finally {
+      setIsProfileSubmitting(false);
     }
   };
 
@@ -666,6 +1401,63 @@ export default function DashboardPage() {
               <h1 className="text-2xl font-bold text-blue-700">Holwa</h1>
             </div>
             <div className="flex items-center gap-4">
+              {isBusinessDashboard ? (
+                <button
+                  type="button"
+                  onClick={openSuppliersDrawer}
+                  className="px-4 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-200 rounded-lg hover:bg-blue-50"
+                >
+                  Suppliers
+                </button>
+              ) : null}
+              {isSupplierDashboard ? (
+                <button
+                  type="button"
+                  onClick={openCustomersDrawer}
+                  className="px-4 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-200 rounded-lg hover:bg-blue-50"
+                >
+                  Customers
+                </button>
+              ) : null}
+              <button
+                onClick={() => setIsInboxOpen(true)}
+                className="relative px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100"
+              >
+                Inbox
+                {inboxItems.length > 0 ? (
+                  <span className="ml-2 rounded-full bg-blue-700 px-2 py-0.5 text-xs text-white">
+                    {inboxItems.length}
+                  </span>
+                ) : null}
+              </button>
+              {userProfile ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.localStorage.setItem(
+                      selectedRoleStorageKey,
+                      userProfile.role
+                    );
+                    router.push("/profile");
+                  }}
+                  className="hidden items-center gap-2 rounded-full bg-gray-100 py-1 pl-1 pr-3 text-xs font-medium text-gray-700 transition hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-600 sm:inline-flex"
+                >
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt=""
+                      className="h-7 w-7 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-700 text-xs font-semibold text-white">
+                      {(session.user?.name || session.user?.email || "H")
+                        .charAt(0)
+                        .toUpperCase()}
+                    </span>
+                  )}
+                  <span>{roleLabels[userProfile.role]}</span>
+                </button>
+              ) : null}
               <span className="text-gray-700">
                 {session.user?.name || session.user?.email}
               </span>
@@ -732,6 +1524,52 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
+
+        <div className="bg-white rounded-lg shadow">
+          <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800">Inbox</h3>
+              <p className="text-sm text-gray-500">
+                Messages and alerts for your account.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsInboxOpen(true)}
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
+            >
+              Open Inbox
+            </button>
+          </div>
+          <div className="divide-y">
+            {inboxItems.length === 0 ? (
+              <div className="px-6 py-6 text-sm text-gray-500">
+                No messages yet.
+              </div>
+            ) : (
+              inboxItems.slice(0, 3).map((item) => (
+                <div key={item.id} className="px-6 py-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        {item.title}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">{item.body}</p>
+                    </div>
+                    <span
+                      className={`mt-2 rounded-full px-3 py-1 text-xs font-medium sm:mt-0 ${
+                        item.variant === "warning"
+                          ? "bg-amber-50 text-amber-700"
+                          : "bg-blue-50 text-blue-700"
+                      }`}
+                    >
+                      {item.variant === "warning" ? "Action" : "Info"}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
         <div className="bg-white rounded-lg shadow">
           <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
             <div className="flex items-center justify-between gap-3 md:justify-start">
@@ -764,65 +1602,55 @@ export default function DashboardPage() {
             </button>
           </div>
           <div className="divide-y">
-            {paginatedCredits.map((record) => (
+            {paginatedCustomerGroups.map((group) => (
               <div
-                key={record.id}
+                key={group.key}
                 className="flex flex-col md:flex-row md:items-center md:justify-between px-6 py-4 gap-4"
               >
                 <div>
                   <p className="text-sm text-gray-500">Customer</p>
                   <p className="text-base font-semibold text-gray-800">
-                    {record.customerName}
+                    {group.name}
+                  </p>
+                  <p className="text-xs text-gray-500">{group.phone}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total unpaid</p>
+                  <p className="text-base font-semibold text-gray-800">
+                    {formatMoney(group.totalUnpaid)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Amount owed</p>
+                  <p className="text-sm text-gray-500">Earliest due</p>
                   <p className="text-base font-semibold text-gray-800">
-                    {formatMoney(record.totalAmount - record.amountPaid)}
+                    {group.earliestDueDate
+                      ? formatDate(group.earliestDueDate)
+                      : "No unpaid credit"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Due date</p>
+                  <p className="text-sm text-gray-500">Open credits</p>
                   <p className="text-base font-semibold text-gray-800">
-                    {formatDate(record.dueDate)}
+                    {group.unpaidCredits.length}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Items</p>
+                  <p className="text-base font-semibold text-gray-800">
+                    {group.unpaidItems.length}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
-                  <select
-                    value={record.status}
-                    onChange={(event) =>
-                      handleStatusChange(
-                        record.id,
-                        event.target.value as CreditRecord["status"]
-                      )
-                    }
-                  className="mt-1 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  >
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
+                  <p className="text-base font-semibold text-gray-800">
+                    {statusLabels[group.status]}
+                  </p>
                 </div>
                 <button
-                  onClick={() => setSelectedRecord(record)}
+                  onClick={() => setSelectedCustomerKey(group.key)}
                   className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
                 >
                   View
-                </button>
-                <button
-                  onClick={() => handleRemind(record.id)}
-                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
-                >
-                  Remind
-                </button>
-                <button
-                  onClick={() => handleDeleteCredit(record.id)}
-                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                >
-                  Delete
                 </button>
               </div>
             ))}
@@ -854,12 +1682,14 @@ export default function DashboardPage() {
 
         <div className="bg-white rounded-lg shadow">
           <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
-            <h3 className="text-lg font-semibold text-gray-800">Stock items</h3>
+            <h3 className="text-lg font-semibold text-gray-800">
+              {isSupplierDashboard ? "In Store" : "Stock items"}
+            </h3>
             <button
-              onClick={() => setIsStockDialogOpen(true)}
+              onClick={openAddStockDialog}
               className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
             >
-              Add stock
+              {isSupplierDashboard ? "Add item" : "Add stock"}
             </button>
           </div>
           <div className="divide-y">
@@ -871,7 +1701,11 @@ export default function DashboardPage() {
               stockItems.map((item) => (
                 <div
                   key={item.id}
-                  className="flex flex-col md:flex-row md:items-center md:justify-between px-6 py-4 gap-4"
+                  className={
+                    isSupplierDashboard
+                      ? "grid gap-4 px-6 py-4 md:grid-cols-[2fr_1fr_3fr_auto] md:items-center"
+                      : "flex flex-col md:flex-row md:items-center md:justify-between px-6 py-4 gap-4"
+                  }
                 >
                   <div>
                     <p className="text-sm text-gray-500">Product</p>
@@ -879,42 +1713,478 @@ export default function DashboardPage() {
                       {item.product}
                     </p>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Alert</p>
-                    <p
-                      className={`text-base font-semibold ${
-                        item.quantity < 5
-                          ? "text-red-600"
+                  {isSupplierDashboard ? (
+                    <>
+                      <div>
+                        <p className="text-sm text-gray-500">Price</p>
+                        <p className="text-base font-semibold text-gray-800">
+                          {formatMoney(Number(item.sellingPrice))}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500">Offers (Text)</p>
+                        <p className="text-sm text-gray-700">
+                          {item.offers || "No offer added"}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <p className="text-sm text-gray-500">Alert</p>
+                      <p
+                        className={`text-base font-semibold ${
+                          item.quantity < 5
+                            ? "text-red-600"
+                            : item.quantity < 10
+                            ? "text-amber-600"
+                            : "text-emerald-600"
+                        }`}
+                      >
+                        {item.quantity < 5
+                          ? "Extremely low"
                           : item.quantity < 10
-                          ? "text-amber-600"
-                          : "text-emerald-600"
-                      }`}
-                    >
-                      {item.quantity < 5
-                        ? "Extremely low"
-                        : item.quantity < 10
-                        ? "Low"
-                        : "Normal"}
-                    </p>
-                  </div>
+                          ? "Low"
+                          : "Normal"}
+                      </p>
+                    </div>
+                  )}
                   <button
-                    onClick={() => setSelectedStock(item)}
+                    onClick={() =>
+                      isSupplierDashboard
+                        ? openEditStockDialog(item)
+                        : setSelectedStock(item)
+                    }
                     className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
                   >
-                    View
+                    {isSupplierDashboard ? "Edit" : "View"}
                   </button>
-                  <button
-                    onClick={() => handleNotifySupplier(item.id)}
-                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
-                  >
-                    Notify supplier
-                  </button>
+                  {!isSupplierDashboard ? (
+                    <button
+                      onClick={() => handleNotifySupplier(item.id)}
+                      className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+                    >
+                      Notify supplier
+                    </button>
+                  ) : null}
                 </div>
               ))
             )}
           </div>
         </div>
       </main>
+
+      {isProfileDialogOpen && pendingProfileRole ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-blue-700">
+                  {roleLabels[pendingProfileRole]} profile
+                </p>
+                <h3 className="mt-1 text-xl font-semibold text-gray-900">
+                  Complete your profile
+                </h3>
+                <p className="mt-2 text-sm text-gray-500">
+                  These details help customers and partners identify your account.
+                </p>
+              </div>
+              {canDismissProfileDialog ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileDialogOpen(false);
+                    setPendingProfileRole(null);
+                    setProfileError("");
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Close profile"
+                >
+                  x
+                </button>
+              ) : null}
+            </div>
+
+            {profileError ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {profileError}
+              </div>
+            ) : null}
+
+            <form className="mt-5 space-y-4" onSubmit={handleProfileSubmit}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Business name
+                </label>
+                <input
+                  type="text"
+                  value={profileForm.businessName}
+                  onChange={(event) =>
+                    handleProfileInputChange("businessName", event.target.value)
+                  }
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    County
+                  </label>
+                  <input
+                    type="text"
+                    value={profileForm.county}
+                    onChange={(event) =>
+                      handleProfileInputChange("county", event.target.value)
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Town
+                  </label>
+                  <input
+                    type="text"
+                    value={profileForm.town}
+                    onChange={(event) =>
+                      handleProfileInputChange("town", event.target.value)
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Estate
+                  </label>
+                  <input
+                    type="text"
+                    value={profileForm.estate}
+                    onChange={(event) =>
+                      handleProfileInputChange("estate", event.target.value)
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Phone number
+                  </label>
+                  <input
+                    type="tel"
+                    value={profileForm.phoneNumber}
+                    onChange={(event) =>
+                      handleProfileInputChange("phoneNumber", event.target.value)
+                    }
+                    placeholder="+254..."
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Mode of payment
+                  </label>
+                  <select
+                    value={profileForm.paymentMode}
+                    onChange={(event) =>
+                      handleProfileInputChange(
+                        "paymentMode",
+                        event.target.value as PaymentMode | ""
+                      )
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required
+                  >
+                    <option value="">Choose payment mode</option>
+                    {paymentModes.map((mode) => (
+                      <option key={mode} value={mode}>
+                        {paymentModeLabels[mode]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Goods or services offered
+                </label>
+                <textarea
+                  value={profileForm.description}
+                  onChange={(event) =>
+                    handleProfileInputChange("description", event.target.value)
+                  }
+                  rows={4}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={isProfileSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isProfileSubmitting ? "Saving..." : "Save and open dashboard"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isInboxOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">Inbox</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Account alerts and messages.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsInboxOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                x
+              </button>
+            </div>
+            <div className="mt-5 divide-y rounded-lg border border-gray-100">
+              {inboxItems.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-gray-500">
+                  No messages yet.
+                </div>
+              ) : (
+                inboxItems.map((item) => (
+                  <div key={item.id} className="px-4 py-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">
+                          {item.title}
+                        </p>
+                        <p className="mt-1 text-sm text-gray-500">
+                          {item.body}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          item.variant === "warning"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-blue-50 text-blue-700"
+                        }`}
+                      >
+                        {item.variant === "warning" ? "Action" : "Info"}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setIsInboxOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isSuppliersDrawerOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/40">
+          <div className="ml-auto flex h-full w-full max-w-xl flex-col bg-white shadow-xl">
+            <div className="border-b border-gray-100 px-6 py-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">
+                    Suppliers
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Find available suppliers by business name or location.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSuppliersDrawerOpen(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Close suppliers drawer"
+                >
+                  x
+                </button>
+              </div>
+              <div className="mt-4">
+                <input
+                  type="search"
+                  value={supplierSearch}
+                  onChange={(event) => setSupplierSearch(event.target.value)}
+                  placeholder="Search supplier or location"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {isSuppliersLoading ? (
+                <div className="py-8 text-sm text-gray-500">
+                  Loading suppliers...
+                </div>
+              ) : filteredSuppliers.length === 0 ? (
+                <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                  No suppliers found.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredSuppliers.map((supplier) => (
+                    <button
+                      type="button"
+                      key={supplier.id}
+                      onClick={() => router.push(`/suppliers/${supplier.id}`)}
+                      className="w-full rounded-lg border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:border-blue-200 hover:bg-blue-50"
+                    >
+                      <h4 className="text-base font-semibold text-gray-900">
+                        {supplier.businessName}
+                      </h4>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {[supplier.county, supplier.town, supplier.estate]
+                          .filter(Boolean)
+                          .join(", ") || "Location not added"}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isCustomersDrawerOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/40">
+          <div className="ml-auto flex h-full w-full max-w-2xl flex-col bg-white shadow-xl">
+            <div className="border-b border-gray-100 px-6 py-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">
+                    Customers
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Businesses that have ordered from your store.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomersDrawerOpen(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Close customers drawer"
+                >
+                  x
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {isCustomersLoading ? (
+                <div className="py-8 text-sm text-gray-500">
+                  Loading customers...
+                </div>
+              ) : supplierCustomers.length === 0 ? (
+                <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                  No business customers yet. They will appear here after sending
+                  an order from your store.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {supplierCustomers.map((customer) => (
+                    <div
+                      key={customer.profile.userId}
+                      className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h4 className="text-base font-semibold text-gray-900">
+                            {customer.profile.businessName || "Business"}
+                          </h4>
+                          <p className="mt-1 text-sm text-gray-500">
+                            {[
+                              customer.profile.county,
+                              customer.profile.town,
+                              customer.profile.estate,
+                            ]
+                              .filter(Boolean)
+                              .join(", ") || "Location not added"}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                          Last order{" "}
+                          {customer.lastOrderAt
+                            ? formatDate(customer.lastOrderAt)
+                            : "unknown"}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {customer.stockItems.length === 0 ? (
+                          <div className="rounded-lg bg-gray-50 px-3 py-3 text-sm text-gray-500">
+                            No matching business stock items found yet.
+                          </div>
+                        ) : (
+                          customer.stockItems.map((item) => (
+                            <div
+                              key={item.id}
+                              className="grid gap-3 rounded-lg border border-gray-100 px-3 py-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+                            >
+                              <div>
+                                <p className="font-medium text-gray-900">
+                                  {item.product}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  Current stock: {item.quantity}
+                                </p>
+                              </div>
+                              <span
+                                className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${
+                                  item.isLow
+                                    ? "bg-amber-50 text-amber-700"
+                                    : "bg-emerald-50 text-emerald-700"
+                                }`}
+                              >
+                                {item.status}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleSendRestockRequest(customer, item)
+                                }
+                                disabled={restockRequestIds[item.id]}
+                                className="inline-flex items-center justify-center rounded-lg bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-200"
+                              >
+                                {restockRequestIds[item.id]
+                                  ? "Sending..."
+                                  : "Request restock"}
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isAddDialogOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
@@ -1135,15 +2405,15 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {selectedRecord ? (
+      {selectedCustomerGroup ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-800">
-                Credit Details
+                Creditor Details
               </h3>
               <button
-                onClick={() => setSelectedRecord(null)}
+                onClick={() => setSelectedCustomerKey(null)}
                 className="text-gray-400 hover:text-gray-600"
               >
                 ✕
@@ -1152,48 +2422,49 @@ export default function DashboardPage() {
             <div className="mt-4 space-y-3 text-sm text-gray-700">
               <div className="flex justify-between">
                 <span className="text-gray-500">Customer</span>
-                <span className="font-medium">{selectedRecord.customerName}</span>
+                <span className="font-medium">{selectedCustomerGroup.name}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Amount owed</span>
+                <span className="text-gray-500">Total unpaid</span>
                 <span className="font-medium">
-                  {formatMoney(
-                    selectedRecord.totalAmount - selectedRecord.amountPaid
-                  )}
+                  {formatMoney(selectedCustomerGroup.totalUnpaid)}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Amount paid</span>
-                <span className="font-medium">
-                  {formatMoney(selectedRecord.amountPaid)}
-                </span>
+                <span className="text-gray-500">Open credits</span>
+                <span className="font-medium">{selectedCustomerGroup.unpaidCredits.length}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Phone</span>
-                <span className="font-medium">{selectedRecord.customerPhone}</span>
+                <span className="font-medium">{selectedCustomerGroup.phone}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Due date</span>
+                <span className="text-gray-500">Earliest due</span>
                 <span className="font-medium">
-                  {formatDate(selectedRecord.dueDate)}
+                  {selectedCustomerGroup.earliestDueDate
+                    ? formatDate(selectedCustomerGroup.earliestDueDate)
+                    : "No unpaid credit"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Status</span>
                 <span className="font-medium">
-                  {statusLabels[selectedRecord.status]}
+                  {statusLabels[selectedCustomerGroup.status]}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Items</span>
+                <span className="text-gray-500">Unpaid items</span>
                 <span className="font-medium">
-                  {selectedRecord.items.length}
+                  {selectedCustomerGroup.unpaidItems.length}
                 </span>
               </div>
               <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-                <p className="text-xs uppercase text-gray-400">Item details</p>
+                <p className="text-xs uppercase text-gray-400">Unpaid item details</p>
                 <div className="mt-2 space-y-2">
-                  {selectedRecord.items.map((item) => (
+                  {selectedCustomerGroup.unpaidItems.length === 0 ? (
+                    <p className="text-sm text-gray-500">No unpaid items.</p>
+                  ) : null}
+                  {selectedCustomerGroup.unpaidItems.map((item) => (
                     <div
                       key={item.id}
                       className="flex items-center justify-between text-sm text-gray-700"
@@ -1207,22 +2478,78 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Created</span>
-                <span className="font-medium">
-                  {formatDate(selectedRecord.createdAt)}
-                </span>
+              <div className="rounded-lg border border-gray-100 bg-white">
+                <div className="border-b border-gray-100 px-3 py-2">
+                  <p className="text-xs uppercase text-gray-400">Credit records</p>
+                </div>
+                <div className="divide-y">
+                  {selectedCustomerGroup.credits.map((record) => (
+                    <div key={record.id} className="space-y-3 px-3 py-3">
+                      <div className="grid gap-3 md:grid-cols-4">
+                        <div>
+                          <p className="text-xs text-gray-500">Amount owed</p>
+                          <p className="font-medium">
+                            {formatMoney(amountOwed(record))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Due date</p>
+                          <p className="font-medium">
+                            {formatDate(record.dueDate)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Items</p>
+                          <p className="font-medium">{record.items.length}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Created</p>
+                          <p className="font-medium">
+                            {formatDate(record.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <select
+                          value={record.status}
+                          onChange={(event) =>
+                            handleStatusChange(
+                              record.id,
+                              event.target.value as CreditRecord["status"]
+                            )
+                          }
+                          className="rounded-lg border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        >
+                          {Object.entries(statusLabels).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleRemind(record.id)}
+                            disabled={!isUnpaid(record)}
+                            className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Remind
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCredit(record.id)}
+                            className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="mt-6 flex justify-end">
               <button
-                onClick={() => handleDeleteCredit(selectedRecord.id)}
-                className="mr-3 px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setSelectedRecord(null)}
+                onClick={() => setSelectedCustomerKey(null)}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
               >
                 Close
@@ -1235,15 +2562,26 @@ export default function DashboardPage() {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-800">Add stock</h3>
+              <h3 className="text-lg font-semibold text-gray-800">
+                {stockEditingItem
+                  ? isSupplierDashboard
+                    ? "Edit store item"
+                    : "Edit stock"
+                  : isSupplierDashboard
+                  ? "Add store item"
+                  : "Add stock"}
+              </h3>
               <button
-                onClick={() => setIsStockDialogOpen(false)}
+                onClick={() => {
+                  setIsStockDialogOpen(false);
+                  resetStockForm();
+                }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 ✕
               </button>
             </div>
-            <form className="mt-4 space-y-4" onSubmit={handleAddStock}>
+            <form className="mt-4 space-y-4" onSubmit={handleSaveStock}>
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Product
@@ -1256,23 +2594,25 @@ export default function DashboardPage() {
                   required
                 />
               </div>
+              {!isSupplierDashboard ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Buying price
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={stockForm.buyingPrice}
+                    onChange={handleStockInputChange("buyingPrice")}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required
+                  />
+                </div>
+              ) : null}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Buying price
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={stockForm.buyingPrice}
-                  onChange={handleStockInputChange("buyingPrice")}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Selling price
+                  {isSupplierDashboard ? "Price" : "Selling price"}
                 </label>
                 <input
                   type="number"
@@ -1284,36 +2624,55 @@ export default function DashboardPage() {
                   required
                 />
               </div>
+              {!isSupplierDashboard ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={stockForm.quantity}
+                    onChange={handleStockInputChange("quantity")}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required
+                  />
+                </div>
+              ) : null}
+              {!isSupplierDashboard ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Supplier phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={stockForm.supplierPhone}
+                    onChange={handleStockInputChange("supplierPhone")}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required
+                  />
+                </div>
+              ) : null}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Quantity
+                  Offers (Text)
                 </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={stockForm.quantity}
-                  onChange={handleStockInputChange("quantity")}
+                <textarea
+                  value={stockForm.offers}
+                  onChange={handleStockInputChange("offers")}
+                  rows={3}
+                  placeholder="Example: Free delivery, bulk discount, limited offer"
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Supplier phone
-                </label>
-                <input
-                  type="tel"
-                  value={stockForm.supplierPhone}
-                  onChange={handleStockInputChange("supplierPhone")}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  required
                 />
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsStockDialogOpen(false)}
+                  onClick={() => {
+                    setIsStockDialogOpen(false);
+                    resetStockForm();
+                  }}
                   className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
                 >
                   Cancel
@@ -1323,14 +2682,20 @@ export default function DashboardPage() {
                   disabled={isStockSubmitting}
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
                 >
-                  {isStockSubmitting ? "Saving..." : "Save stock"}
+                  {isStockSubmitting
+                    ? "Saving..."
+                    : stockEditingItem
+                    ? "Save changes"
+                    : isSupplierDashboard
+                    ? "Save item"
+                    : "Save stock"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       ) : null}
-      {selectedStock ? (
+      {selectedStock && !isSupplierDashboard ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">

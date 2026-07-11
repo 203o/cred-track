@@ -1,0 +1,2 @@
+ALTER TABLE "StockItem"
+ADD COLUMN IF NOT EXISTS "offers" TEXT;

@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { signIn, signUp } from "@/lib/auth-client";
+import { isUserRole, roleLabels, type UserRole } from "@/lib/user-profile";
+
+const selectedRoleStorageKey = "holwa:selected-role";
 
 export default function SignUpPage() {
   const router = useRouter();
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -21,6 +25,30 @@ export default function SignUpPage() {
     const normalized = normalizePhone(value);
     const digits = normalized.replace(/\D/g, "");
     return `phone-${digits}@cred.local`;
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const roleFromUrl = params.get("role");
+    const roleFromStorage = window.localStorage.getItem(
+      selectedRoleStorageKey
+    );
+    const role = isUserRole(roleFromUrl)
+      ? roleFromUrl
+      : isUserRole(roleFromStorage)
+      ? roleFromStorage
+      : null;
+
+    if (role) {
+      window.localStorage.setItem(selectedRoleStorageKey, role);
+      setSelectedRole(role);
+    }
+  }, []);
+
+  const rememberSelectedRole = () => {
+    if (selectedRole) {
+      window.localStorage.setItem(selectedRoleStorageKey, selectedRole);
+    }
   };
 
   const handlePhoneSignUp = async (e: React.FormEvent) => {
@@ -55,6 +83,7 @@ export default function SignUpPage() {
       if (result.error) {
         setError(result.error.message || "Failed to sign up");
       } else {
+        rememberSelectedRole();
         router.push("/dashboard");
       }
     } catch (err) {
@@ -67,12 +96,18 @@ export default function SignUpPage() {
   const handleGoogleSignUp = async () => {
     setError("");
     setIsLoading(true);
+    rememberSelectedRole();
 
     try {
-      await signIn.social({
+      const result = await signIn.social({
         provider: "google",
         callbackURL: "/dashboard",
       });
+
+      if (result.error) {
+        setError(result.error.message || "Failed to sign up with Google");
+        setIsLoading(false);
+      }
     } catch (err) {
       setError("Failed to sign up with Google");
       setIsLoading(false);
@@ -90,7 +125,9 @@ export default function SignUpPage() {
           </div>
           <h2 className="text-2xl font-semibold text-gray-800">Create your account</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Join Holwa to start tracking credits
+            {selectedRole
+              ? `Join Holwa as ${roleLabels[selectedRole]}`
+              : "Join Holwa to start tracking credits"}
           </p>
         </div>
 

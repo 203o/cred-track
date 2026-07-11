@@ -22,6 +22,10 @@ function normalizeDate(date: Date) {
   return normalized;
 }
 
+function normalizePhone(phone: string) {
+  return phone.trim().replace(/\s+/g, "");
+}
+
 function computeStatus(
   currentStatus: string,
   dueDate: Date
@@ -60,7 +64,7 @@ export async function GET(request: NextRequest) {
 
   const credits = await prisma.credit.findMany({
     where: { userId },
-    include: { items: true },
+    include: { customer: true, items: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -112,25 +116,45 @@ export async function POST(request: NextRequest) {
     return sum + quantity * unitPrice;
   }, 0);
   const amountPaid = Number(body.amountPaid || 0);
+  const customerName = body.customerName.trim();
+  const customerPhone = normalizePhone(body.customerPhone);
 
-  const credit = await prisma.credit.create({
-    data: {
-      userId: body.userId,
-      customerName: body.customerName.trim(),
-      customerPhone: body.customerPhone.trim(),
-      dueDate: new Date(body.dueDate),
-      totalAmount,
-      amountPaid,
-      items: {
-        create: body.items.map((item) => ({
-          name: item.name.trim(),
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          total: item.quantity * item.unitPrice,
-        })),
+  const credit = await prisma.$transaction(async (tx) => {
+    const customer = await tx.customer.upsert({
+      where: {
+        userId_phone: {
+          userId: body.userId,
+          phone: customerPhone,
+        },
       },
-    },
-    include: { items: true },
+      update: { name: customerName },
+      create: {
+        userId: body.userId,
+        name: customerName,
+        phone: customerPhone,
+      },
+    });
+
+    return tx.credit.create({
+      data: {
+        userId: body.userId,
+        customerId: customer.id,
+        customerName,
+        customerPhone,
+        dueDate: new Date(body.dueDate),
+        totalAmount,
+        amountPaid,
+        items: {
+          create: body.items.map((item) => ({
+            name: item.name.trim(),
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            total: item.quantity * item.unitPrice,
+          })),
+        },
+      },
+      include: { customer: true, items: true },
+    });
   });
 
   return NextResponse.json({ credit }, { status: 201 });

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createStkPush } from "@/lib/intasend";
 
 type TopupBody = {
   userId: string;
@@ -52,6 +51,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const normalizedPhone = body.phone.replace(/^\+/, "").trim();
+    const { createStkPush } = await import("@/lib/intasend");
     const response = await createStkPush({
       phoneNumber: normalizedPhone,
       email: user.email,

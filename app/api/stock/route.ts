@@ -8,6 +8,7 @@ type CreateStockBody = {
   sellingPrice: number;
   quantity: number;
   supplierPhone: string;
+  offers?: string;
 };
 
 export async function GET(request: NextRequest) {
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
       sellingPrice: Number(body.sellingPrice),
       quantity: Number(body.quantity),
       supplierPhone: body.supplierPhone.trim(),
+      offers: body.offers?.trim() || null,
     },
   });
 

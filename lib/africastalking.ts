@@ -1,11 +1,13 @@
 const apiKey = process.env.AFRICAS_TALKING_API_KEY;
 const username = process.env.AFRICAS_TALKING_USERNAME;
+const senderId = process.env.AFRICAS_TALKING_SENDER_ID?.trim();
 
 if (!apiKey || !username) {
   throw new Error("Missing Africa's Talking credentials");
 }
 const resolvedApiKey = apiKey;
 const resolvedUsername = username;
+const resolvedSenderId = senderId || undefined;
 
 export async function sendSms({
   to,
@@ -22,8 +24,9 @@ export async function sendSms({
     message,
   });
 
-  if (from) {
-    body.set("from", from);
+  const resolvedFrom = from?.trim() || resolvedSenderId;
+  if (resolvedFrom) {
+    body.set("from", resolvedFrom);
   }
 
   const response = await fetch(

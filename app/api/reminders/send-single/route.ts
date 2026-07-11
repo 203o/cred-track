@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendSms } from "@/lib/africastalking";
 
 type SendSingleBody = {
   userId: string;
@@ -58,6 +57,7 @@ export async function POST(request: NextRequest) {
     const total = Number(credit.totalAmount);
     const paid = Number(credit.amountPaid);
     const amountDue = total - paid;
+    const { sendSms } = await import("@/lib/africastalking");
     const responseText = await sendSms({
       to: credit.customerPhone,
       message: `Reminder: Your account is due. Amount due: Ksh ${amountDue.toFixed(

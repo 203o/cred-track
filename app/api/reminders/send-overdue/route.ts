@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendSms } from "@/lib/africastalking";
 
 type SendRemindersBody = {
   userId: string;
@@ -41,6 +40,7 @@ export async function POST(request: NextRequest) {
   const messageBase =
     "Reminder: Your account is overdue. Please pay to avoid further charges.";
 
+  const { sendSms } = await import("@/lib/africastalking");
   const sendResults = await Promise.allSettled(
     credits.map((credit) => {
       const total = Number(credit.totalAmount);

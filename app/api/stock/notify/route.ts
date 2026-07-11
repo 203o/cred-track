@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendSms } from "@/lib/africastalking";
 
 type NotifyBody = {
   userId: string;
@@ -35,6 +34,7 @@ export async function POST(request: NextRequest) {
   const message = `Please restock ${item.product}. Current stock is ${item.quantity}.`;
 
   try {
+    const { sendSms } = await import("@/lib/africastalking");
     await sendSms({ to: item.supplierPhone, message });
     return NextResponse.json({ sent: true });
   } catch (error) {

@@ -1,0 +1,114 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import {
+  isPaymentMode,
+  isUserRole,
+  needsBusinessProfile,
+  type PaymentMode,
+  type UserRole,
+} from "@/lib/user-profile";
+
+type ProfileBody = {
+  userId: string;
+  role: UserRole;
+  businessName?: string;
+  county?: string;
+  town?: string;
+  estate?: string;
+  phoneNumber?: string;
+  paymentMode?: PaymentMode;
+  description?: string;
+};
+
+function clean(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get("userId");
+
+  if (!userId) {
+    return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+  }
+
+  const profile = await prisma.userProfile.findUnique({
+    where: { userId },
+  });
+
+  return NextResponse.json({ profile });
+}
+
+export async function POST(request: NextRequest) {
+  const body = (await request.json()) as ProfileBody;
+  const userId = clean(body.userId);
+  const role = body.role;
+
+  if (!userId || !isUserRole(role)) {
+    return NextResponse.json(
+      { error: "Missing or invalid user role" },
+      { status: 400 }
+    );
+  }
+
+  const businessName = clean(body.businessName);
+  const county = clean(body.county);
+  const town = clean(body.town);
+  const estate = clean(body.estate);
+  const phoneNumber = clean(body.phoneNumber);
+  const description = clean(body.description);
+  const paymentMode = body.paymentMode;
+  const resolvedPaymentMode = isPaymentMode(paymentMode || null)
+    ? paymentMode
+    : null;
+
+  if (needsBusinessProfile(role)) {
+    if (
+      !businessName ||
+      !county ||
+      !town ||
+      !estate ||
+      !phoneNumber ||
+      !resolvedPaymentMode ||
+      !description
+    ) {
+      return NextResponse.json(
+        { error: "Please complete all profile fields" },
+        { status: 400 }
+      );
+    }
+  }
+
+  const profileData = needsBusinessProfile(role)
+    ? {
+        role,
+        businessName,
+        county,
+        town,
+        estate,
+        phoneNumber,
+        paymentMode: resolvedPaymentMode,
+        description,
+      }
+    : {
+        role,
+        businessName: null,
+        county: null,
+        town: null,
+        estate: null,
+        phoneNumber: null,
+        paymentMode: null,
+        description: null,
+      };
+
+  const profile = await prisma.userProfile.upsert({
+    where: { userId },
+    update: profileData,
+    create: {
+      userId,
+      ...profileData,
+    },
+  });
+
+  return NextResponse.json({ profile });
+}

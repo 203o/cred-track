@@ -8,7 +8,7 @@ This project uses:
 - **Next.js 14** with App Router
 - **TypeScript** for type safety
 - **Tailwind CSS** for styling
-- **Better Auth** for authentication
+- **Firebase Auth** for authentication
 
 ### Key Files Explained:
 
@@ -35,9 +35,9 @@ This project uses:
    - `dashboard/page.tsx` - Protected dashboard page
    - `globals.css` - Global styles with Tailwind directives
 
-6. **`lib/auth.ts`** - Better Auth server configuration
-7. **`lib/auth-client.ts`** - Better Auth client utilities
-8. **`app/api/auth/[...all]/route.ts`** - Better Auth API route handler
+6. **`lib/firebase.ts`** - Firebase client app configuration
+7. **`lib/auth-client.ts`** - Firebase Auth client utilities
+8. **`app/api/firebase-user/route.ts`** - Syncs Firebase users into the app database
 
 ## Getting Started
 
@@ -49,11 +49,16 @@ This project uses:
 2. Set up environment variables:
    Create a `.env.local` file in the root directory with:
    ```env
-   BETTER_AUTH_SECRET=your_secret_key_here_min_32_characters
-   BETTER_AUTH_URL=http://localhost:3000
-   NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000
-   GOOGLE_CLIENT_ID=your_google_client_id
-   GOOGLE_CLIENT_SECRET=your_google_client_secret
+   NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
+   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+   NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id
+   AFRICAS_TALKING_USERNAME=your_africas_talking_username
+   AFRICAS_TALKING_API_KEY=your_africas_talking_api_key
+   AFRICAS_TALKING_SENDER_ID=your_sender_id
    ```
 
 3. Run the development server:
@@ -66,8 +71,8 @@ This project uses:
 ## Authentication
 
 The app includes:
-- **Login page** (root page `/`) with email/password and Google sign-in
-- **Sign up page** (`/signup`) with email/password and Google sign-up
+- **Login page** (root page `/`) with phone/password and Google sign-in through Firebase
+- **Sign up page** (`/signup`) with phone/password and Google sign-up through Firebase
 - **Protected dashboard** (`/dashboard`) - requires authentication
 
 ## Next Steps
