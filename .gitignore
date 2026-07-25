@@ -43,3 +43,6 @@ next-env.d.ts
 # local Android test builds
 /Holwa-test.apk
 /android-test/
+/Holwa-twa.apk
+/Holwa-twa.aab
+/android-twa/

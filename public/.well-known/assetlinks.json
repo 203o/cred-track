@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.holwa.credtrack",
+      "sha256_cert_fingerprints": [
+        "A8:1A:9D:AD:C0:E4:8B:2E:5A:BA:78:2F:DF:0E:B4:F7:AA:E9:BB:E5:C8:16:BA:1D:FE:4B:BD:E3:D8:3E:79:BF"
+      ]
+    }
+  }
+]
