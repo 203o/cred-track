@@ -39,3 +39,7 @@ next-env.d.ts
 /generated/prisma
 
 /generated/prisma
+
+# local Android test builds
+/Holwa-test.apk
+/android-test/
