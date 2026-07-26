@@ -172,6 +172,10 @@ function amountOwed(record: CreditRecord) {
   return Number(record.totalAmount) - Number(record.amountPaid);
 }
 
+function totalItemQuantity(items: Array<{ quantity: number }>) {
+  return items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+}
+
 function isUnpaid(record: CreditRecord) {
   return record.status !== "PAID" && amountOwed(record) > 0;
 }
@@ -772,8 +776,9 @@ export default function DashboardPage() {
           `Total after adding: ${formatMoney(
             existingGroup.totalUnpaid + newAmountOwed
           )}.`,
-          `Unpaid items after adding: ${
-            existingGroup.unpaidItems.length + items.length
+          `Unpaid item count after adding: ${
+            totalItemQuantity(existingGroup.unpaidItems) +
+            totalItemQuantity(items)
           }.`,
           "",
           "Add this credit anyway?",
@@ -1730,7 +1735,7 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-sm text-gray-500">Items</p>
                   <p className="text-base font-semibold text-gray-800">
-                    {group.unpaidItems.length}
+                    {totalItemQuantity(group.unpaidItems)}
                   </p>
                 </div>
                 <div>
@@ -2548,7 +2553,7 @@ export default function DashboardPage() {
               <div className="flex justify-between">
                 <span className="text-gray-500">Unpaid items</span>
                 <span className="font-medium">
-                  {selectedCustomerGroup.unpaidItems.length}
+                  {totalItemQuantity(selectedCustomerGroup.unpaidItems)}
                 </span>
               </div>
               <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
@@ -2593,7 +2598,9 @@ export default function DashboardPage() {
                         </div>
                         <div>
                           <p className="text-xs text-gray-500">Items</p>
-                          <p className="font-medium">{record.items.length}</p>
+                          <p className="font-medium">
+                            {totalItemQuantity(record.items)}
+                          </p>
                         </div>
                         <div>
                           <p className="text-xs text-gray-500">Created</p>

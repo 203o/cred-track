@@ -158,6 +158,11 @@ export default function SupplierStorePage() {
     [cartItems]
   );
 
+  const cartItemCount = useMemo(
+    () => cartItems.reduce((sum, item) => sum + item.selectedQuantity, 0),
+    [cartItems]
+  );
+
   const updateQuantity = (item: StoreItem, nextQuantity: number) => {
     const quantity = Math.max(0, Math.min(item.quantity, nextQuantity || 0));
     setQuantities((prev) => ({
@@ -324,7 +329,7 @@ export default function SupplierStorePage() {
                           onChange={(event) =>
                             updateQuantity(item, Number(event.target.value))
                           }
-                          className="h-full w-16 border-x border-gray-200 text-center text-sm font-semibold outline-none"
+                          className="h-full w-16 border-x border-gray-200 bg-white text-center text-sm font-semibold text-gray-950 outline-none"
                         />
                         <button
                           type="button"
@@ -374,6 +379,10 @@ export default function SupplierStorePage() {
             )}
 
             <div className="border-t border-gray-200 px-5 py-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm text-gray-500">Items selected</span>
+                <strong className="text-sm text-gray-950">{cartItemCount}</strong>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-500">Total</span>
                 <strong className="text-lg text-gray-950">
