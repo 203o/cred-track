@@ -164,7 +164,7 @@ export default function SupplierStorePage() {
   );
 
   const updateQuantity = (item: StoreItem, nextQuantity: number) => {
-    const quantity = Math.max(0, Math.min(item.quantity, nextQuantity || 0));
+    const quantity = Math.max(0, nextQuantity || 0);
     setQuantities((prev) => ({
       ...prev,
       [item.id]: quantity,
@@ -324,7 +324,6 @@ export default function SupplierStorePage() {
                         <input
                           type="number"
                           min="0"
-                          max={item.quantity}
                           value={quantity}
                           onChange={(event) =>
                             updateQuantity(item, Number(event.target.value))
