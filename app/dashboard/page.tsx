@@ -306,6 +306,9 @@ export default function DashboardPage() {
   const isBusinessDashboard = userProfile?.role === "BUSINESS";
   const profileImage =
     session?.user && "image" in session.user ? session.user.image : null;
+  const displayAccountName =
+    userProfile?.businessName || session?.user?.name || session?.user?.email || "Holwa user";
+  const displayInitial = displayAccountName.charAt(0).toUpperCase();
   const canDismissProfileDialog = userProfile
     ? hasBusinessProfileDetails(userProfile)
     : false;
@@ -1401,26 +1404,61 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
+          <div className="flex h-16 items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Image src="/logo.jpeg" alt="Holwa logo" width={32} height={32} />
               <h1 className="text-xl font-bold text-blue-700 sm:text-2xl">
                 Holwa
               </h1>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsMobileMenuOpen((current) => !current)}
-              aria-expanded={isMobileMenuOpen}
-              aria-label="Open navigation menu"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-600 md:hidden"
-            >
-              <span className="space-y-1.5">
-                <span className="block h-0.5 w-5 rounded-full bg-current" />
-                <span className="block h-0.5 w-5 rounded-full bg-current" />
-                <span className="block h-0.5 w-5 rounded-full bg-current" />
-              </span>
-            </button>
+            <div className="flex min-w-0 items-center gap-2 md:hidden">
+              {userProfile ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.localStorage.setItem(
+                      selectedRoleStorageKey,
+                      userProfile.role
+                    );
+                    router.push("/profile");
+                  }}
+                  className="flex min-w-0 items-center gap-2 rounded-full bg-gray-50 py-1 pl-1 pr-2 text-left ring-1 ring-gray-100"
+                >
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt=""
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-700 text-xs font-semibold text-white">
+                      {displayInitial}
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block max-w-28 truncate text-xs font-semibold text-gray-900">
+                      {displayAccountName}
+                    </span>
+                    <span className="block text-[11px] font-medium text-blue-700">
+                      {roleLabels[userProfile.role]}
+                    </span>
+                  </span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(true)}
+                aria-expanded={isMobileMenuOpen}
+                aria-label="Open navigation menu"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <span className="space-y-1.5">
+                  <span className="block h-0.5 w-5 rounded-full bg-current" />
+                  <span className="block h-0.5 w-5 rounded-full bg-current" />
+                  <span className="block h-0.5 w-5 rounded-full bg-current" />
+                </span>
+              </button>
+            </div>
             <div className="hidden items-center gap-4 md:flex">
               {isBusinessDashboard ? (
                 <button
@@ -1480,7 +1518,7 @@ export default function DashboardPage() {
                 </button>
               ) : null}
               <span className="max-w-48 truncate text-gray-700">
-                {session.user?.name || session.user?.email}
+                {displayAccountName}
               </span>
               <button
                 onClick={() => signOut()}
@@ -1490,85 +1528,143 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
-          {isMobileMenuOpen ? (
-            <div className="border-t border-gray-100 py-3 md:hidden">
-              <div className="space-y-2">
-                <div className="truncate rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700">
-                  {session.user?.name || session.user?.email}
+        </div>
+      </nav>
+
+      {isMobileMenuOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            type="button"
+            aria-label="Close navigation menu"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="absolute inset-0 bg-black/40"
+          />
+          <aside className="absolute right-0 top-0 flex h-full w-[86vw] max-w-sm flex-col bg-white shadow-2xl">
+            <div className="border-b border-gray-100 px-5 py-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt=""
+                      className="h-11 w-11 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-700 text-sm font-semibold text-white">
+                      {displayInitial}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-semibold text-gray-950">
+                      {displayAccountName}
+                    </p>
+                    {userProfile ? (
+                      <span className="mt-1 inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                        {roleLabels[userProfile.role]}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-                {isBusinessDashboard ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      openSuppliersDrawer();
-                    }}
-                    className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-white px-3 py-2 text-left text-sm font-medium text-blue-700 hover:bg-blue-50"
-                  >
-                    Suppliers
-                  </button>
-                ) : null}
-                {isSupplierDashboard ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      openCustomersDrawer();
-                    }}
-                    className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-white px-3 py-2 text-left text-sm font-medium text-blue-700 hover:bg-blue-50"
-                  >
-                    Customers
-                  </button>
-                ) : null}
-                {userProfile ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      window.localStorage.setItem(
-                        selectedRoleStorageKey,
-                        userProfile.role
-                      );
-                      router.push("/profile");
-                    }}
-                    className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    <span>Profile</span>
-                    <span className="text-xs text-gray-500">
-                      {roleLabels[userProfile.role]}
-                    </span>
-                  </button>
-                ) : null}
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    setIsInboxOpen(true);
-                  }}
-                  className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-left text-sm font-medium text-blue-700 hover:bg-blue-100"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="rounded-lg px-2 py-1 text-xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Close navigation menu"
                 >
-                  <span>Inbox</span>
-                  {inboxItems.length > 0 ? (
-                    <span className="rounded-full bg-blue-700 px-2 py-0.5 text-xs text-white">
-                      {inboxItems.length}
-                    </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    signOut();
-                  }}
-                  className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Sign out
+                  x
                 </button>
               </div>
             </div>
-          ) : null}
+
+            <div className="flex-1 space-y-2 overflow-y-auto px-4 py-5">
+              {isBusinessDashboard ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    openSuppliersDrawer();
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-white px-4 py-3 text-left text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                >
+                  Suppliers
+                </button>
+              ) : null}
+              {isSupplierDashboard ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    openCustomersDrawer();
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-white px-4 py-3 text-left text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                >
+                  Customers
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsInboxOpen(true);
+                }}
+                className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-left text-sm font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                <span>Inbox</span>
+                {inboxItems.length > 0 ? (
+                  <span className="rounded-full bg-blue-700 px-2 py-0.5 text-xs text-white">
+                    {inboxItems.length}
+                  </span>
+                ) : null}
+              </button>
+              {userProfile ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    window.localStorage.setItem(
+                      selectedRoleStorageKey,
+                      userProfile.role
+                    );
+                    router.push("/profile");
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                >
+                  <span>Profile</span>
+                  <span className="text-xs font-medium text-gray-500">
+                    {roleLabels[userProfile.role]}
+                  </span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsTopupOpen(true);
+                }}
+                className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-gray-50"
+              >
+                Recharge
+                <span className="text-xs font-medium text-gray-500">
+                  {reminderBalance}
+                </span>
+              </button>
+            </div>
+
+            <div className="border-t border-gray-100 p-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  signOut();
+                }}
+                className="flex w-full items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Sign out
+              </button>
+            </div>
+          </aside>
         </div>
-      </nav>
+      ) : null}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         <div className="grid gap-6 md:grid-cols-4">
