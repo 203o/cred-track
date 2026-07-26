@@ -1,12 +1,13 @@
 const apiKey = process.env.AFRICAS_TALKING_API_KEY;
 const username = process.env.AFRICAS_TALKING_USERNAME;
 const senderId = process.env.AFRICAS_TALKING_SENDER_ID?.trim();
+const bypassSmsForTesting = process.env.SMS_BYPASS_FOR_TESTING === "true";
 
-if (!apiKey || !username) {
+if (!bypassSmsForTesting && (!apiKey || !username)) {
   throw new Error("Missing Africa's Talking credentials");
 }
-const resolvedApiKey = apiKey;
-const resolvedUsername = username;
+const resolvedApiKey = apiKey || "";
+const resolvedUsername = username || "";
 const resolvedSenderId = senderId || undefined;
 
 export async function sendSms({
@@ -18,6 +19,14 @@ export async function sendSms({
   message: string;
   from?: string;
 }) {
+  if (bypassSmsForTesting) {
+    console.info("[AT SMS] bypassed for testing", {
+      to,
+      messageLength: message.length,
+    });
+    return `SMS_BYPASSED_FOR_TESTING:${Date.now()}`;
+  }
+
   const body = new URLSearchParams({
     username: resolvedUsername,
     to,

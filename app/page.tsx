@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { signIn } from "@/lib/auth-client";
+import {
+  authRedirectErrorEvent,
+  authRedirectErrorKey,
+  signIn,
+} from "@/lib/auth-client";
 import { roleLabels, type UserRole } from "@/lib/user-profile";
 
 const roleOptions: Array<{
@@ -46,6 +50,29 @@ export default function LoginPage() {
     const digits = normalized.replace(/\D/g, "");
     return `phone-${digits}@cred.local`;
   };
+
+  useEffect(() => {
+    const handleRedirectError = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail;
+
+      if (message) {
+        setError(message);
+      }
+    };
+
+    const redirectError = window.sessionStorage.getItem(authRedirectErrorKey);
+
+    if (redirectError) {
+      setError(redirectError);
+      window.sessionStorage.removeItem(authRedirectErrorKey);
+    }
+
+    window.addEventListener(authRedirectErrorEvent, handleRedirectError);
+
+    return () => {
+      window.removeEventListener(authRedirectErrorEvent, handleRedirectError);
+    };
+  }, []);
 
   const rememberSelectedRole = (role = selectedRole) => {
     if (role) {

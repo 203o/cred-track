@@ -278,6 +278,7 @@ export default function DashboardPage() {
   const [profileForm, setProfileForm] =
     useState<ProfileForm>(emptyProfileForm);
   const [isInboxOpen, setIsInboxOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSuppliersDrawerOpen, setIsSuppliersDrawerOpen] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState("");
   const [suppliers, setSuppliers] = useState<SupplierProfile[]>([]);
@@ -1395,12 +1396,27 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
+          <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-2">
               <Image src="/logo.jpeg" alt="Holwa logo" width={32} height={32} />
-              <h1 className="text-2xl font-bold text-blue-700">Holwa</h1>
+              <h1 className="text-xl font-bold text-blue-700 sm:text-2xl">
+                Holwa
+              </h1>
             </div>
-            <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen((current) => !current)}
+              aria-expanded={isMobileMenuOpen}
+              aria-label="Open navigation menu"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-600 md:hidden"
+            >
+              <span className="space-y-1.5">
+                <span className="block h-0.5 w-5 rounded-full bg-current" />
+                <span className="block h-0.5 w-5 rounded-full bg-current" />
+                <span className="block h-0.5 w-5 rounded-full bg-current" />
+              </span>
+            </button>
+            <div className="hidden items-center gap-4 md:flex">
               {isBusinessDashboard ? (
                 <button
                   type="button"
@@ -1458,7 +1474,7 @@ export default function DashboardPage() {
                   <span>{roleLabels[userProfile.role]}</span>
                 </button>
               ) : null}
-              <span className="text-gray-700">
+              <span className="max-w-48 truncate text-gray-700">
                 {session.user?.name || session.user?.email}
               </span>
               <button
@@ -1469,6 +1485,83 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
+          {isMobileMenuOpen ? (
+            <div className="border-t border-gray-100 py-3 md:hidden">
+              <div className="space-y-2">
+                <div className="truncate rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700">
+                  {session.user?.name || session.user?.email}
+                </div>
+                {isBusinessDashboard ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      openSuppliersDrawer();
+                    }}
+                    className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-white px-3 py-2 text-left text-sm font-medium text-blue-700 hover:bg-blue-50"
+                  >
+                    Suppliers
+                  </button>
+                ) : null}
+                {isSupplierDashboard ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      openCustomersDrawer();
+                    }}
+                    className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-white px-3 py-2 text-left text-sm font-medium text-blue-700 hover:bg-blue-50"
+                  >
+                    Customers
+                  </button>
+                ) : null}
+                {userProfile ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      window.localStorage.setItem(
+                        selectedRoleStorageKey,
+                        userProfile.role
+                      );
+                      router.push("/profile");
+                    }}
+                    className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <span>Profile</span>
+                    <span className="text-xs text-gray-500">
+                      {roleLabels[userProfile.role]}
+                    </span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    setIsInboxOpen(true);
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-left text-sm font-medium text-blue-700 hover:bg-blue-100"
+                >
+                  <span>Inbox</span>
+                  {inboxItems.length > 0 ? (
+                    <span className="rounded-full bg-blue-700 px-2 py-0.5 text-xs text-white">
+                      {inboxItems.length}
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    signOut();
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Sign out
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </nav>
 

@@ -4,10 +4,37 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { signIn, signUp } from "@/lib/auth-client";
+import {
+  authRedirectErrorEvent,
+  authRedirectErrorKey,
+  signIn,
+  signUp,
+} from "@/lib/auth-client";
 import { isUserRole, roleLabels, type UserRole } from "@/lib/user-profile";
 
 const selectedRoleStorageKey = "holwa:selected-role";
+
+const roleOptions: Array<{
+  role: UserRole;
+  title: string;
+  description: string;
+}> = [
+  {
+    role: "BUSINESS",
+    title: "Business",
+    description: "Track customers, stock, payments, and reminders.",
+  },
+  {
+    role: "SUPPLIER",
+    title: "Supplier",
+    description: "Manage supply requests and customer updates.",
+  },
+  {
+    role: "INDIVIDUAL",
+    title: "Individual",
+    description: "View your inbox and manage personal credit activity.",
+  },
+];
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -28,6 +55,21 @@ export default function SignUpPage() {
   };
 
   useEffect(() => {
+    const handleRedirectError = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail;
+
+      if (message) {
+        setError(message);
+      }
+    };
+
+    const redirectError = window.sessionStorage.getItem(authRedirectErrorKey);
+
+    if (redirectError) {
+      setError(redirectError);
+      window.sessionStorage.removeItem(authRedirectErrorKey);
+    }
+
     const params = new URLSearchParams(window.location.search);
     const roleFromUrl = params.get("role");
     const roleFromStorage = window.localStorage.getItem(
@@ -43,6 +85,12 @@ export default function SignUpPage() {
       window.localStorage.setItem(selectedRoleStorageKey, role);
       setSelectedRole(role);
     }
+
+    window.addEventListener(authRedirectErrorEvent, handleRedirectError);
+
+    return () => {
+      window.removeEventListener(authRedirectErrorEvent, handleRedirectError);
+    };
   }, []);
 
   const rememberSelectedRole = () => {
@@ -51,9 +99,17 @@ export default function SignUpPage() {
     }
   };
 
+  const dashboardPath =
+    selectedRole === "INDIVIDUAL" ? "/dashboard" : "/profile?setup=1";
+
   const handlePhoneSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!selectedRole) {
+      setError("Choose an account type before creating your account.");
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
@@ -84,7 +140,7 @@ export default function SignUpPage() {
         setError(result.error.message || "Failed to sign up");
       } else {
         rememberSelectedRole();
-        router.push("/dashboard");
+        router.push(dashboardPath);
       }
     } catch (err) {
       setError("An unexpected error occurred");
@@ -95,13 +151,19 @@ export default function SignUpPage() {
 
   const handleGoogleSignUp = async () => {
     setError("");
+
+    if (!selectedRole) {
+      setError("Choose an account type before creating your account.");
+      return;
+    }
+
     setIsLoading(true);
     rememberSelectedRole();
 
     try {
       const result = await signIn.social({
         provider: "google",
-        callbackURL: "/dashboard",
+        callbackURL: dashboardPath,
       });
 
       if (result.error) {
@@ -140,6 +202,54 @@ export default function SignUpPage() {
 
         {/* Phone/Password Form */}
         <form onSubmit={handlePhoneSignUp} className="mt-8 space-y-6">
+          <div>
+            <p className="mb-3 block text-sm font-medium text-gray-700">
+              Account type
+            </p>
+            <div className="grid gap-3">
+              {roleOptions.map((option) => {
+                const isSelected = selectedRole === option.role;
+
+                return (
+                  <button
+                    key={option.role}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRole(option.role);
+                      window.localStorage.setItem(
+                        selectedRoleStorageKey,
+                        option.role
+                      );
+                      setError("");
+                    }}
+                    className={`rounded-lg border px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50"
+                    }`}
+                    aria-pressed={isSelected}
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-gray-900">
+                        {option.title}
+                      </span>
+                      <span
+                        className={`h-3 w-3 rounded-full border ${
+                          isSelected
+                            ? "border-blue-700 bg-blue-700"
+                            : "border-gray-300"
+                        }`}
+                      />
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-gray-600">
+                      {option.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="space-y-4">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">

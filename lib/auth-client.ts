@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   updateProfile,
   type User as FirebaseUser,
@@ -28,6 +30,30 @@ type AuthResult = {
   data?: Session;
   error?: { message: string };
 };
+
+const googleRedirectCallbackKey = "holwa:google-redirect-callback";
+export const authRedirectErrorKey = "holwa:auth-redirect-error";
+export const authRedirectErrorEvent = "holwa:auth-redirect-error";
+
+function createGoogleProvider() {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return provider;
+}
+
+function shouldUseRedirectSignIn() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const userAgent = window.navigator.userAgent;
+  const isMobile =
+    /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent) ||
+    window.matchMedia("(display-mode: standalone)").matches ||
+    document.referrer.startsWith("android-app://");
+
+  return isMobile;
+}
 
 function toSession(user: FirebaseUser): Session {
   return {
@@ -92,10 +118,15 @@ export const signIn = {
         throw new Error("Unsupported social provider");
       }
 
-      const credential = await signInWithPopup(
-        firebaseAuth,
-        new GoogleAuthProvider()
-      );
+      const googleProvider = createGoogleProvider();
+
+      if (shouldUseRedirectSignIn()) {
+        window.sessionStorage.setItem(googleRedirectCallbackKey, callbackURL);
+        await signInWithRedirect(firebaseAuth, googleProvider);
+        return {};
+      }
+
+      const credential = await signInWithPopup(firebaseAuth, googleProvider);
       await syncFirebaseUser(credential.user);
       window.location.assign(callbackURL);
       return { data: toSession(credential.user) };
@@ -137,6 +168,26 @@ export const signUp = {
 export async function signOut() {
   await firebaseSignOut(firebaseAuth);
   window.location.assign("/");
+}
+
+export async function handleAuthRedirectResult(): Promise<AuthResult> {
+  try {
+    const credential = await getRedirectResult(firebaseAuth);
+
+    if (!credential?.user) {
+      return {};
+    }
+
+    await syncFirebaseUser(credential.user);
+    const callbackURL =
+      window.sessionStorage.getItem(googleRedirectCallbackKey) || "/dashboard";
+    window.sessionStorage.removeItem(googleRedirectCallbackKey);
+    window.location.assign(callbackURL);
+    return { data: toSession(credential.user) };
+  } catch (error) {
+    window.sessionStorage.removeItem(googleRedirectCallbackKey);
+    return { error: toAuthError(error) };
+  }
 }
 
 export function useSession() {

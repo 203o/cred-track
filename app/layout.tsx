@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import AuthRedirectHandler from "./auth-redirect-handler";
 import PwaRegister from "./pwa-register";
 import "./globals.css";
 
@@ -37,6 +38,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        <AuthRedirectHandler />
         <PwaRegister />
         {children}
       </body>
